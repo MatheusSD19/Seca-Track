@@ -1,0 +1,2944 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seca Track - Previsão Operacional de Rios</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        * { font-family: 'Inter', sans-serif; }
+
+        .tab-active { border-bottom: 2px solid #2563eb; color: #2563eb; }
+        .scenario-optimistic { color: #10b981; }
+        .scenario-medium { color: #3b82f6; }
+        .scenario-pessimistic { color: #ef4444; }
+
+        .card { background: white; border-radius: 0.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border: 1px solid #e5e7eb; }
+        .input-field { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.875rem; }
+        .input-field:focus { outline: none; border-color: #2563eb; }
+
+        .btn-primary { background: #2563eb; color: white; padding: 0.5rem 1rem; border-radius: 0.375rem; font-weight: 500; transition: background 0.2s; }
+        .btn-primary:hover { background: #1d4ed8; }
+        .btn-secondary { background: #f3f4f6; color: #374151; padding: 0.5rem 1rem; border-radius: 0.375rem; font-weight: 500; border: 1px solid #d1d5db; transition: background 0.2s; }
+        .btn-secondary:hover { background: #e5e7eb; }
+        .btn-danger { background: #ef4444; color: white; padding: 0.5rem 1rem; border-radius: 0.375rem; font-weight: 500; transition: background 0.2s; }
+        .btn-danger:hover { background: #dc2626; }
+
+        table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+        th { background: #f9fafb; padding: 0.6rem 0.75rem; text-align: left; font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb; font-size: 0.8rem; }
+        td { padding: 0.6rem 0.75rem; border-bottom: 1px solid #e5e7eb; }
+        tr:hover { background: #f9fafb; }
+        .table-container { overflow-x: auto; }
+
+        .badge { display: inline-flex; padding: 0.25rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 500; }
+        .badge-success { background: #d1fae5; color: #065f46; }
+        .badge-warning { background: #fef3c7; color: #92400e; }
+        .badge-danger { background: #fee2e2; color: #991b1b; }
+        .badge-info { background: #dbeafe; color: #1e40af; }
+
+        .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+        .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+        .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+        @media (max-width: 1024px) { .grid-4 { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 768px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } }
+
+        .chart-container { position: relative; height: 320px; width: 100%; }
+        .deficit-alert { background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); border: 1px solid #ef4444; border-radius: 0.5rem; padding: 1rem; }
+        .deficit-alert-medio { background: linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%); border: 1px solid #f97316; border-radius: 0.5rem; padding: 1rem; }
+
+        .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+        .modal.active { display: flex; }
+        .modal-content { background: white; border-radius: 0.5rem; max-width: 720px; width: 92%; max-height: 88vh; overflow-y: auto; }
+        .modal-content.wide { max-width: 900px; }
+
+        .chip { display:inline-flex; align-items:center; gap:.25rem; padding:.2rem .5rem; background:#f3f4f6; border-radius:9999px; font-size:.72rem; color:#374151; }
+        .chip.live { background:#dcfce7; color:#065f46; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16 flex-wrap gap-2">
+                <div class="flex items-center gap-3">
+                    <i data-lucide="waves" class="w-8 h-8 text-blue-600"></i>
+                    <div>
+                        <h1 class="text-xl font-bold text-gray-900">Seca Track</h1>
+                        <p class="text-xs text-gray-500">Previsão Operacional de Rios</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2 flex-wrap">
+                    <span id="dbStatus" class="chip"><i data-lucide="hard-drive" class="w-3 h-3"></i> <span id="dbStatusText">Armazenamento: local (navegador)</span></span>
+                    <button onclick="pickDatabaseFolder()" class="btn-secondary text-sm flex items-center gap-2" title="Escolher pasta para salvar a base de dados">
+                        <i data-lucide="folder-open" class="w-4 h-4"></i> Pasta DB
+                    </button>
+                    <button onclick="saveToFolderManual()" class="btn-secondary text-sm flex items-center gap-2" title="Forçar salvamento na pasta">
+                        <i data-lucide="save" class="w-4 h-4"></i> Salvar
+                    </button>
+                    <button onclick="exportData()" class="btn-secondary text-sm flex items-center gap-2">
+                        <i data-lucide="download" class="w-4 h-4"></i> Exportar
+                    </button>
+                    <label class="btn-secondary text-sm flex items-center gap-2 cursor-pointer">
+                        <i data-lucide="upload" class="w-4 h-4"></i> Importar
+                        <input type="file" id="importFile" accept=".json" class="hidden" onchange="importData(this)">
+                    </label>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <div class="bg-white border-b border-gray-200 sticky top-16 z-30">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <nav class="flex gap-8 overflow-x-auto">
+                <button onclick="switchTab('rios')" id="tab-rios" class="tab-active py-4 text-sm font-medium whitespace-nowrap">
+                    <i data-lucide="trending-up" class="w-4 h-4 inline mr-2"></i>Nível dos Rios
+                </button>
+                <button onclick="switchTab('ativos')" id="tab-ativos" class="py-4 text-sm font-medium text-gray-500 hover:text-gray-700 whitespace-nowrap">
+                    <i data-lucide="ship" class="w-4 h-4 inline mr-2"></i>Ativos
+                </button>
+                <button onclick="switchTab('rotas')" id="tab-rotas" class="py-4 text-sm font-medium text-gray-500 hover:text-gray-700 whitespace-nowrap">
+                    <i data-lucide="map" class="w-4 h-4 inline mr-2"></i>Rotas & Metas
+                </button>
+                <button onclick="switchTab('dashboard')" id="tab-dashboard" class="py-4 text-sm font-medium text-gray-500 hover:text-gray-700 whitespace-nowrap">
+                    <i data-lucide="bar-chart-3" class="w-4 h-4 inline mr-2"></i>Dashboard
+                </button>
+            </nav>
+        </div>
+    </div>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+        <!-- MÓDULO 1: NÍVEL DOS RIOS -->
+        <div id="content-rios" class="tab-content">
+            <div class="grid-2">
+                <div class="card p-6">
+                    <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <i data-lucide="upload-cloud" class="w-5 h-5 text-blue-600"></i>
+                        Importar Dados Históricos
+                    </h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Upload Excel/CSV</label>
+                            <input type="file" id="excelUpload" accept=".xlsx,.xls,.csv" class="input-field" onchange="handleExcelUpload(this)">
+                            <p class="text-xs text-gray-500 mt-1">Colunas esperadas: data (formato DD/MM/AAAA), nome do rio, nível do rio. O nome exato das colunas é flexível.</p>
+                        </div>
+                        <div class="relative">
+                            <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-gray-300"></div></div>
+                            <div class="relative flex justify-center text-sm"><span class="px-2 bg-white text-gray-500">ou</span></div>
+                        </div>
+                        <button onclick="openManualEntryModal()" class="btn-secondary w-full flex items-center justify-center gap-2">
+                            <i data-lucide="plus" class="w-4 h-4"></i> Inserir Manualmente
+                        </button>
+                    </div>
+
+                    <div class="mt-6 pt-6 border-t border-gray-200">
+                        <div class="flex justify-between items-center mb-3">
+                            <h3 class="text-sm font-medium text-gray-700">Variáveis de Navegação</h3>
+                            <button onclick="openModal('cenarios')" class="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1">
+                                <i data-lucide="sliders" class="w-3 h-3"></i> Ajustar por cenário
+                            </button>
+                        </div>
+                        <div class="grid-2">
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Ábaco (global)</label>
+                                <input type="number" id="abaco" value="1.03" step="0.01" class="input-field" onchange="updateVariaveis()">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">FAQ (global)</label>
+                                <input type="number" id="faq" value="0.50" step="0.01" class="input-field" onchange="updateVariaveis()">
+                            </div>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-2">Calado operacional = Nível do Rio + Ábaco − FAQ</p>
+                        <div class="mt-3 pt-3 border-t border-gray-100">
+                            <label class="block text-xs text-gray-500 mb-1">
+                                Período considerado para o cálculo de tendência
+                                <span class="text-gray-400">(padrão: 3 anos)</span>
+                            </label>
+                            <div class="flex items-center gap-2">
+                                <input type="number" id="anosProjecao" value="3" min="1" max="20" step="1"
+                                       class="input-field" style="width:5rem" onchange="updateVariaveis()">
+                                <span class="text-xs text-gray-400" id="anosProjecaoInfo">—</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg font-semibold flex items-center gap-2">
+                            <i data-lucide="database" class="w-5 h-5 text-blue-600"></i>
+                            Dados Carregados
+                        </h2>
+                        <div class="flex items-center gap-2">
+                            <select id="filtroRio" class="input-field text-sm" style="width:auto" onchange="renderTabelaRios(); updateRioChart();">
+                                <option value="">Todos os rios</option>
+                            </select>
+                            <button onclick="clearRioData()" class="text-red-600 hover:text-red-800 text-sm">Limpar</button>
+                        </div>
+                    </div>
+                    <div class="table-container max-h-64 overflow-y-auto">
+                        <table id="tabelaRios">
+                            <thead><tr><th>Data</th><th>Rio</th><th>Nível (m)</th><th>Ações</th></tr></thead>
+                            <tbody id="tbodyRios"></tbody>
+                        </table>
+                    </div>
+                    <p id="rioCount" class="text-sm text-gray-500 mt-2">Nenhum dado carregado</p>
+                </div>
+            </div>
+
+            <div class="card p-6 mt-6">
+                <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
+                    <h2 class="text-lg font-semibold flex items-center gap-2">
+                        <i data-lucide="line-chart" class="w-5 h-5 text-blue-600"></i>
+                        Projeção de Nível do Rio
+                    </h2>
+                    <div class="flex items-center gap-3 flex-wrap">
+                        <div id="legendaGraficoRios" class="flex gap-3 text-xs items-center flex-wrap">
+                            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-gray-500"></span>Histórico</span>
+                            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-green-500"></span>Otimista</span>
+                            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-blue-500"></span>Médio</span>
+                            <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-red-500"></span>Pessimista</span>
+                        </div>
+                        <button onclick="exportarProjecaoCSV()" class="btn-secondary text-xs flex items-center gap-1 py-1" title="Exportar dados do gráfico para Excel (CSV)">
+                            <i data-lucide="table-2" class="w-3 h-3"></i> Exportar CSV
+                        </button>
+                        <button onclick="openModal('cenarios')" class="btn-secondary text-xs flex items-center gap-1 py-1">
+                            <i data-lucide="settings-2" class="w-3 h-3"></i> Gerenciar Cenários
+                        </button>
+                    </div>
+                </div>
+                <div class="chart-container"><canvas id="chartRios"></canvas></div>
+                <p class="text-xs text-gray-500 mt-2" id="notaGraficoRios">
+                    Cenários baseados em média histórica por mês ± desvio-padrão + tendência linear. Piso em 0.
+                </p>
+                <!-- Calados mínimos dos ativos -->
+                <div class="mt-3 pt-3 border-t border-gray-100" id="painelCalados" style="display:none">
+                    <div class="flex items-start gap-3 flex-wrap">
+                        <span class="text-xs font-medium text-gray-600 flex items-center gap-1 mt-1 shrink-0">
+                            <i data-lucide="anchor" class="w-3 h-3"></i> Calados mínimos
+                        </span>
+                        <div id="botoesCalados" class="flex gap-2 flex-wrap"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Aderência das previsões -->
+            <div class="card p-6 mt-6" id="cardAderencia" style="display:none">
+                <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
+                    <h2 class="text-lg font-semibold flex items-center gap-2">
+                        <i data-lucide="target" class="w-5 h-5 text-purple-600"></i>
+                        Aderência das Previsões
+                    </h2>
+                    <span class="text-xs text-gray-500">Projeção (anos anteriores) vs. nível observado em <span id="aderenciaAno"></span></span>
+                </div>
+                <div class="grid-3 mb-4" id="aderenciaResumo"></div>
+                <div class="table-container">
+                    <table id="tabelaAderencia">
+                        <thead><tr>
+                            <th>Mês</th>
+                            <th>Projetado (m)</th>
+                            <th>Real (m)</th>
+                            <th>Erro (m)</th>
+                            <th>Erro (%)</th>
+                            <th>Acurácia</th>
+                        </tr></thead>
+                        <tbody id="tbodyAderencia"></tbody>
+                    </table>
+                </div>
+                <p class="text-xs text-gray-500 mt-2">* Projeção calculada usando apenas dados históricos de anos anteriores, sem os dados do ano corrente.</p>
+            </div>
+        </div>
+
+        <!-- MÓDULO 2: ATIVOS -->
+        <div id="content-ativos" class="tab-content hidden">
+            <div class="grid-2">
+                <div class="card p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg font-semibold flex items-center gap-2">
+                            <i data-lucide="container" class="w-5 h-5 text-blue-600"></i> Tipos de Barcaças
+                        </h2>
+                        <button onclick="openModal('barcaca')" class="btn-primary text-sm flex items-center gap-1">
+                            <i data-lucide="plus" class="w-4 h-4"></i> Novo Tipo
+                        </button>
+                    </div>
+                    <div class="table-container">
+                        <table id="tabelaBarcacas">
+                            <thead>
+                                <tr>
+                                    <th>Tipo</th><th>Qtd</th>
+                                    <th>Calado Mín</th><th>Vol @Mín (t)</th>
+                                    <th>Calado Máx</th><th>Vol @Máx (t)</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbodyBarcacas"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg font-semibold flex items-center gap-2">
+                            <i data-lucide="anchor" class="w-5 h-5 text-blue-600"></i> Empurradores
+                        </h2>
+                        <button onclick="openModal('empurrador')" class="btn-primary text-sm flex items-center gap-1">
+                            <i data-lucide="plus" class="w-4 h-4"></i> Novo
+                        </button>
+                    </div>
+                    <div class="table-container">
+                        <table id="tabelaEmpurradores">
+                            <thead>
+                                <tr>
+                                    <th>Nome</th><th>HP</th>
+                                    <th>Calado Mín</th><th>Calado Máx</th>
+                                    <th>Barcaças/Comboio</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbodyEmpurradores"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MÓDULO 3: ROTAS -->
+        <div id="content-rotas" class="tab-content hidden">
+            <div class="card p-6 mb-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-semibold flex items-center gap-2">
+                        <i data-lucide="route" class="w-5 h-5 text-blue-600"></i> Cadastro de Rotas
+                    </h2>
+                    <button onclick="openModal('rota')" class="btn-primary text-sm flex items-center gap-1">
+                        <i data-lucide="plus" class="w-4 h-4"></i> Nova Rota
+                    </button>
+                </div>
+                <div class="table-container">
+                    <table id="tabelaRotas">
+                        <thead>
+                            <tr>
+                                <th>Rota</th><th>Rio</th>
+                                <th>Viagem (h)</th><th>t/h Carga</th><th>t/h Descarga</th>
+                                <th>Meta Anual (t)</th>
+                                <th>Frota</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbodyRotas"></tbody>
+                    </table>
+                </div>
+                <p class="text-xs text-gray-500 mt-3">
+                    Ciclo do empurrador = carga (vol÷t/h) + viagem ida+volta + descarga (vol÷t/h) + espera. As viagens possíveis no mês são calculadas automaticamente com base no calado previsto.
+                </p>
+            </div>
+        </div>
+
+        <!-- MÓDULO 4: DASHBOARD -->
+        <div id="content-dashboard" class="tab-content hidden">
+
+            <!-- KPIs -->
+            <div class="grid-4 mb-6">
+                <div class="card p-5 border-l-4 border-green-500">
+                    <h3 class="text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Cap. Otimista</h3>
+                    <p class="text-2xl font-bold text-green-600" id="resumoOtimista">-</p>
+                    <p class="text-xs text-gray-400 mt-1">Total restante no ano</p>
+                </div>
+                <div class="card p-5 border-l-4 border-blue-500">
+                    <h3 class="text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Cap. Média</h3>
+                    <p class="text-2xl font-bold text-blue-600" id="resumoMedio">-</p>
+                    <p class="text-xs text-gray-400 mt-1">Projeção base</p>
+                </div>
+                <div class="card p-5 border-l-4 border-orange-400">
+                    <h3 class="text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Cap. Pessimista</h3>
+                    <p class="text-2xl font-bold text-orange-500" id="resumoPessimista">-</p>
+                    <p class="text-xs text-gray-400 mt-1">Pior cenário</p>
+                </div>
+                <div class="card p-5 border-l-4 border-gray-400">
+                    <h3 class="text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Meta Total</h3>
+                    <p class="text-2xl font-bold text-gray-700" id="resumoMeta">-</p>
+                    <p class="text-xs text-gray-400 mt-1">Período restante</p>
+                </div>
+            </div>
+
+            <!-- Barra de filtros -->
+            <div class="card p-4 mb-4">
+                <div class="flex items-center gap-4 flex-wrap">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="filter" class="w-4 h-4 text-gray-400 shrink-0"></i>
+                        <label class="text-sm font-medium text-gray-600 whitespace-nowrap">Rota:</label>
+                        <select id="dashFiltroRota" class="input-field text-sm py-1" style="min-width:180px; width:auto" onchange="updateDashboard()">
+                            <option value="">Todas as rotas</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center gap-2 ml-auto">
+                        <span class="text-sm text-gray-500 whitespace-nowrap">Visão:</span>
+                        <div class="flex rounded-lg overflow-hidden border border-gray-300">
+                            <button id="btnViewRota" onclick="setDashView('rota')"
+                                class="text-xs px-3 py-1.5 font-medium bg-blue-600 text-white transition-colors">
+                                <i data-lucide="list" class="w-3 h-3 inline mr-1"></i>Por Rota
+                            </button>
+                            <button id="btnViewMes" onclick="setDashView('mes')"
+                                class="text-xs px-3 py-1.5 font-medium bg-white text-gray-600 transition-colors">
+                                <i data-lucide="calendar" class="w-3 h-3 inline mr-1"></i>Por Mês (Total)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Gráfico principal -->
+            <div class="card p-6 mb-6">
+                <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
+                    <h2 class="text-lg font-semibold flex items-center gap-2">
+                        <i data-lucide="bar-chart-2" class="w-5 h-5 text-blue-600"></i>
+                        <span id="dashChartTitle">Capacidade vs Budget por Mês</span>
+                    </h2>
+                    <div class="flex items-center gap-2 text-xs text-gray-500">
+                        <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm inline-block" style="background:#ef4444"></span>Pessimista</span>
+                        <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm inline-block" style="background:#22c55e"></span>Δ Médio</span>
+                        <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm inline-block" style="background:#3b82f6"></span>Δ Otimista</span>
+                        <span class="flex items-center gap-1">— Budget</span>
+                    </div>
+                </div>
+                <div class="chart-container" style="height: 420px;"><canvas id="chartDashboard"></canvas></div>
+            </div>
+
+            <!-- Alertas -->
+            <div id="alertasDeficit" class="mb-6"></div>
+
+            <!-- Tabela detalhada -->
+            <div class="card p-6 mb-6">
+                <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
+                    <h2 class="text-lg font-semibold flex items-center gap-2">
+                        <i data-lucide="table" class="w-5 h-5 text-blue-600"></i> Meta vs Capacidade — Detalhado
+                    </h2>
+                    <div class="text-xs text-gray-500">Clique em uma linha para ver as viagens estimadas</div>
+                </div>
+                <div class="table-container">
+                    <table id="tabelaDashboard">
+                        <thead>
+                            <tr>
+                                <th>Rota</th><th>Mês</th><th>Meta (t)</th>
+                                <th class="scenario-optimistic">Cap. Otimista</th>
+                                <th class="scenario-medium">Cap. Média</th>
+                                <th class="scenario-pessimistic">Cap. Pessimista</th>
+                                <th>Déficit (pessim.)</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbodyDashboard"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="cenariosCustomDashboard" class="mt-2"></div>
+        </div>
+    </main>
+
+    <!-- Modal: Entrada Manual de Rio -->
+    <div id="modalRio" class="modal">
+        <div class="modal-content p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold">Adicionar Medição de Rio</h3>
+                <button onclick="closeModal('rio')" class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="space-y-4">
+                <div><label class="block text-sm font-medium text-gray-700 mb-1">Data</label>
+                    <input type="date" id="rioData" class="input-field"></div>
+                <div><label class="block text-sm font-medium text-gray-700 mb-1">Nome do Rio</label>
+                    <input type="text" id="rioNome" class="input-field" placeholder="Ex: Rio Amazonas"></div>
+                <div><label class="block text-sm font-medium text-gray-700 mb-1">Nível (metros)</label>
+                    <input type="number" id="rioNivel" class="input-field" step="0.01" placeholder="Ex: 7,88"></div>
+                <div class="flex gap-3 pt-4">
+                    <button onclick="saveRio()" class="btn-primary flex-1">Salvar</button>
+                    <button onclick="closeModal('rio')" class="btn-secondary flex-1">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Barcaça -->
+    <div id="modalBarcaca" class="modal">
+        <div class="modal-content p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold" id="tituloBarcaca">Novo Tipo de Barcaça</h3>
+                <button onclick="closeModal('barcaca')" class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <input type="hidden" id="barcacaId">
+            <div class="space-y-4">
+                <div class="grid-2">
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Nome/Tipo *</label>
+                        <input type="text" id="barcacaNome" class="input-field" placeholder="Ex: TB-1800"></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Quantidade existente *</label>
+                        <input type="number" id="barcacaQtd" class="input-field" min="1" value="1" placeholder="Ex: 12"></div>
+                </div>
+                <div class="grid-2">
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Calado Mínimo (m) *</label>
+                        <input type="number" id="barcacaCaladoMin" class="input-field" step="0.01" placeholder="Ex: 3,20"></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Volume @Mín (t) *</label>
+                        <input type="number" id="barcacaVolMin" class="input-field" step="0.01" placeholder="Ex: 1200"></div>
+                </div>
+                <div class="grid-2">
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Calado Máximo (m) *</label>
+                        <input type="number" id="barcacaCaladoMax" class="input-field" step="0.01" placeholder="Ex: 4,50"></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Volume @Máx (t) *</label>
+                        <input type="number" id="barcacaVolMax" class="input-field" step="0.01" placeholder="Ex: 1800"></div>
+                </div>
+                <p class="text-xs text-gray-500">Os volumes de mínimo e máximo permitem interpolação linear para qualquer calado intermediário.</p>
+                <div class="flex gap-3 pt-4">
+                    <button onclick="saveBarcaca()" class="btn-primary flex-1">Salvar</button>
+                    <button onclick="closeModal('barcaca')" class="btn-secondary flex-1">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Empurrador -->
+    <div id="modalEmpurrador" class="modal">
+        <div class="modal-content p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold" id="tituloEmpurrador">Novo Empurrador</h3>
+                <button onclick="closeModal('empurrador')" class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <input type="hidden" id="empurradorId">
+            <div class="space-y-4">
+                <div><label class="block text-sm font-medium text-gray-700 mb-1">Nome *</label>
+                    <input type="text" id="empurradorNome" class="input-field" placeholder="Ex: EB-01"></div>
+                <div class="grid-2">
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Potência (HP)</label>
+                        <input type="number" id="empurradorPotencia" class="input-field" placeholder="Ex: 3000"></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Qtd de Barcaças por Comboio *</label>
+                        <input type="number" id="empurradorBarcacas" class="input-field" value="4" min="1"></div>
+                </div>
+                <div class="grid-2">
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Calado Mínimo (m) *</label>
+                        <input type="number" id="empurradorCaladoMin" class="input-field" step="0.01" placeholder="Ex: 1,80"></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Calado Máximo (m)</label>
+                        <input type="number" id="empurradorCaladoMax" class="input-field" step="0.01" placeholder="Opcional"></div>
+                </div>
+                <div class="flex gap-3 pt-4">
+                    <button onclick="saveEmpurrador()" class="btn-primary flex-1">Salvar</button>
+                    <button onclick="closeModal('empurrador')" class="btn-secondary flex-1">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Rota -->
+    <div id="modalRota" class="modal">
+        <div class="modal-content wide p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold" id="tituloRota">Nova Rota</h3>
+                <button onclick="closeModal('rota')" class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <input type="hidden" id="rotaId">
+            <div class="space-y-4">
+                <div class="grid-2">
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Nome da Rota *</label>
+                        <input type="text" id="rotaNome" class="input-field" placeholder="Ex: Santarém → Manaus"></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Rio *</label>
+                        <select id="rotaRio" class="input-field"><option value="">Selecione...</option></select></div>
+                </div>
+
+                <div class="grid-4">
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Tempo de Viagem (h)</label>
+                        <input type="number" id="rotaTempoViagem" class="input-field" step="0.1" placeholder="Ida+volta" value="72"></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">t/h Originação</label>
+                        <input type="number" id="rotaTonHoraOrigem" class="input-field" step="1" placeholder="Carga" value="1000"></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">t/h Elevação</label>
+                        <input type="number" id="rotaTonHoraDestino" class="input-field" step="1" placeholder="Descarga" value="1000"></div>
+                    <div><label class="block text-sm font-medium text-gray-700 mb-1">Tempo de Espera (h)</label>
+                        <input type="number" id="rotaTempoEspera" class="input-field" step="0.5" placeholder="Fila" value="0"></div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Meta Mensal de Volume (t)</label>
+                    <div id="metasGrid" class="grid grid-cols-3 md:grid-cols-6 gap-2"></div>
+                </div>
+
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="block text-sm font-medium text-gray-700">Empurradores Alocados</label>
+                        <button type="button" onclick="addEmpurradorRota()" class="text-sm text-blue-600 hover:text-blue-800">+ Adicionar Empurrador</button>
+                    </div>
+                    <div id="empurradoresRota" class="space-y-2"></div>
+                    <p class="text-xs text-gray-500 mt-1">Selecione o empurrador e o tipo de barcaça que ele opera nesta rota. As viagens possíveis no mês são calculadas automaticamente a partir do ciclo.</p>
+                </div>
+
+                <div class="flex gap-3 pt-4">
+                    <button onclick="saveRota()" class="btn-primary flex-1">Salvar</button>
+                    <button onclick="closeModal('rota')" class="btn-secondary flex-1">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Gerenciar Cenários -->
+    <div id="modalCenarios" class="modal">
+        <div class="modal-content wide p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold">Gerenciar Cenários</h3>
+                <button onclick="closeModal('cenarios')" class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+
+            <!-- Cenários base -->
+            <div class="mb-5">
+                <h4 class="text-sm font-semibold text-gray-700 mb-1">Cenários padrão — variáveis de navegação</h4>
+                <p class="text-xs text-gray-500 mb-3">Deixe em branco para usar os valores globais. A projeção do nível usa média ± 1 desvio-padrão mensal.</p>
+                <div class="space-y-3">
+                    <div class="border-l-4 border-green-500 pl-3 py-1">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="font-semibold text-green-700 text-sm">Otimista <span class="text-xs font-normal text-gray-400">(média + 1σ)</span></span>
+                        </div>
+                        <div class="grid-2">
+                            <div><label class="text-xs text-gray-600">Ábaco</label>
+                                <input type="number" id="cenOtimistaAbaco" step="0.01" class="input-field" placeholder="Global"></div>
+                            <div><label class="text-xs text-gray-600">FAQ</label>
+                                <input type="number" id="cenOtimistaFaq" step="0.01" class="input-field" placeholder="Global"></div>
+                        </div>
+                    </div>
+                    <div class="border-l-4 border-blue-500 pl-3 py-1">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="font-semibold text-blue-700 text-sm">Médio <span class="text-xs font-normal text-gray-400">(média histórica + tendência)</span></span>
+                        </div>
+                        <div class="grid-2">
+                            <div><label class="text-xs text-gray-600">Ábaco</label>
+                                <input type="number" id="cenMedioAbaco" step="0.01" class="input-field" placeholder="Global"></div>
+                            <div><label class="text-xs text-gray-600">FAQ</label>
+                                <input type="number" id="cenMedioFaq" step="0.01" class="input-field" placeholder="Global"></div>
+                        </div>
+                    </div>
+                    <div class="border-l-4 border-red-500 pl-3 py-1">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="font-semibold text-red-700 text-sm">Pessimista <span class="text-xs font-normal text-gray-400">(média − 1σ)</span></span>
+                        </div>
+                        <div class="grid-2">
+                            <div><label class="text-xs text-gray-600">Ábaco</label>
+                                <input type="number" id="cenPessimistaAbaco" step="0.01" class="input-field" placeholder="Global"></div>
+                            <div><label class="text-xs text-gray-600">FAQ</label>
+                                <input type="number" id="cenPessimistaFaq" step="0.01" class="input-field" placeholder="Global"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex gap-3 mt-3">
+                    <button onclick="saveCenarios()" class="btn-primary flex-1">Salvar cenários padrão</button>
+                </div>
+            </div>
+
+            <!-- Cenários customizados -->
+            <div class="border-t border-gray-200 pt-5">
+                <div class="flex justify-between items-center mb-3">
+                    <h4 class="text-sm font-semibold text-gray-700">Cenários Personalizados</h4>
+                    <button onclick="openCenarioCustomModal()" class="btn-primary text-sm flex items-center gap-1">
+                        <i data-lucide="plus" class="w-4 h-4"></i> Novo Cenário
+                    </button>
+                </div>
+                <div id="listaCenariosCustom" class="space-y-2">
+                    <!-- preenchido por renderListaCenariosCustom() -->
+                </div>
+                <p id="semCenariosCustom" class="text-xs text-gray-400 text-center py-3 hidden">Nenhum cenário personalizado criado ainda.</p>
+            </div>
+
+            <div class="flex justify-end mt-4">
+                <button onclick="closeModal('cenarios')" class="btn-secondary">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Novo/Editar Cenário Customizado -->
+    <div id="modalCenarioCustom" class="modal">
+        <div class="modal-content p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold" id="tituloCenarioCustom">Novo Cenário</h3>
+                <button onclick="closeModal('cenarioCustom')" class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <input type="hidden" id="cenarioCustomId">
+            <div class="space-y-4">
+                <div class="grid-2">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Nome *</label>
+                        <input type="text" id="cenNome" class="input-field" placeholder="Ex: Seca Histórica 2015">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Cor de identificação</label>
+                        <input type="color" id="cenCor" value="#9333ea" class="input-field" style="padding:0.25rem;height:2.25rem;">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Tipo de projeção do nível do rio *</label>
+                    <select id="cenTipo" class="input-field" onchange="updateCenarioTipoUI()">
+                        <option value="desvio">Múltiplo do desvio-padrão mensal</option>
+                        <option value="percentual">Percentual sobre a projeção base (médio)</option>
+                        <option value="manual">Nível fixo manual por mês</option>
+                    </select>
+                </div>
+
+                <div id="paramDesvio" class="bg-gray-50 rounded-lg p-3">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Multiplicador do desvio-padrão (σ)
+                    </label>
+                    <input type="number" id="cenMultiplicadorStd" class="input-field" step="0.1" value="-2">
+                    <p class="text-xs text-gray-500 mt-1">
+                        Exemplos: <b>+1</b> = igual ao Otimista, <b>0</b> = igual ao Médio, <b>-1</b> = igual ao Pessimista, <b>-2</b> = seca crítica (dois desvios abaixo da média).
+                    </p>
+                </div>
+
+                <div id="paramPercentual" class="bg-gray-50 rounded-lg p-3 hidden">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Percentual sobre a projeção base (%)</label>
+                    <input type="number" id="cenPercentual" class="input-field" step="1" value="-30">
+                    <p class="text-xs text-gray-500 mt-1">Ex: <b>-30</b> = nível 30% abaixo da projeção média. <b>+20</b> = 20% acima.</p>
+                </div>
+
+                <div id="paramManual" class="bg-gray-50 rounded-lg p-3 hidden">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Nível médio esperado por mês (m)</label>
+                    <p class="text-xs text-gray-500 mb-2">Deixe vazio para usar a projeção base naquele mês.</p>
+                    <div id="manuaisGrid" class="grid grid-cols-3 md:grid-cols-6 gap-2"></div>
+                </div>
+
+                <div class="border-t border-gray-200 pt-3">
+                    <h4 class="text-sm font-medium text-gray-700 mb-2">Variáveis de navegação (overrides)</h4>
+                    <div class="grid-2">
+                        <div>
+                            <label class="text-xs text-gray-600">Ábaco <span class="text-gray-400">(vazio = global)</span></label>
+                            <input type="number" id="cenAbaco" step="0.01" class="input-field" placeholder="Global">
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-600">FAQ <span class="text-gray-400">(vazio = global)</span></label>
+                            <input type="number" id="cenFaq" step="0.01" class="input-field" placeholder="Global">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex gap-3 pt-2">
+                    <button onclick="saveCenarioCustom()" class="btn-primary flex-1">Salvar</button>
+                    <button onclick="closeModal('cenarioCustom')" class="btn-secondary flex-1">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Detalhe de Viagens -->
+    <div id="modalDetalhe" class="modal">
+        <div class="modal-content wide p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold" id="tituloDetalhe">Detalhe de Viagens</h3>
+                <button onclick="closeModal('detalhe')" class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div id="detalheBody" class="space-y-4"></div>
+        </div>
+    </div>
+
+    <script>
+    // ==============================================================================
+    // SECA TRACK — Sistema de Previsão Operacional de Rios
+    // Single-file app, 100% client-side. Persiste em localStorage e em pasta local
+    // escolhida pelo usuário via File System Access API (quando suportada).
+    // ==============================================================================
+
+    // ---------- Estado ----------
+    let dadosRios     = [];
+    let empurradores  = [];
+    let barcacas      = [];   // "tipos de barcaça"
+    let rotas         = [];
+    let variaveis     = {
+        abaco: 1.03,
+        faq: 0.50,
+        anosProjecao: 3,
+        cenarios: {
+            otimista:   { abaco: null, faq: null },
+            medio:      { abaco: null, faq: null },
+            pessimista: { abaco: null, faq: null }
+        },
+        cenariosCustom: [],
+        caladosVisiveis: {}
+    };
+    let chartRios = null;
+    let chartDashboard = null;
+    let dashViewMode = 'rota'; // 'rota' | 'mes'
+    let _detalhesMesCache = []; // cache para o modal de detalhes do mês
+    let dashCenariosVisiveis = {}; // id -> bool; ausente = visível
+
+    // File System Access
+    let dbDirHandle = null;      // DirectoryHandle escolhido pelo usuário
+    const DB_FILE_NAME = 'seca-track-db.json';
+
+    const MESES        = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    const MESES_FULL   = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const CALADO_CORES = ['#a855f7','#f59e0b','#06b6d4','#ec4899','#84cc16','#f97316'];
+
+    // Cache de projeção — invalidado sempre que dadosRios ou variaveis mudam
+    const _projCache = {};
+    function invalidarCacheProjecao() { for (const k in _projCache) delete _projCache[k]; }
+
+    // Helpers de módulo reutilizados em múltiplas funções
+    const numOrNull = v => (v === '' || v === null || isNaN(parseFloat(v))) ? null : parseFloat(v);
+
+    function statusBadge(deficit, capMe, meta) {
+        if (deficit > 0) return { status: 'DÉFICIT', bc: 'badge-danger' };
+        if (capMe < meta) return { status: 'ATENÇÃO', bc: 'badge-warning' };
+        return { status: 'OK', bc: 'badge-success' };
+    }
+
+    // ---------- Inicialização ----------
+    document.addEventListener('DOMContentLoaded', async () => {
+        buildMetasGrid();
+        lucide.createIcons();
+        loadFromLocalStorage();
+        applyVariaveisToInputs();
+        await restoreDbHandle();
+        updateDbStatus();
+        updateAllViews();
+    });
+
+    function buildMetasGrid() {
+        const grid = document.getElementById('metasGrid');
+        grid.innerHTML = MESES.map(m => `
+            <div>
+                <label class="text-xs text-gray-500">${m}</label>
+                <input type="number" id="meta${m}" class="input-field text-sm" placeholder="t">
+            </div>
+        `).join('');
+    }
+
+    // ---------- Persistência ----------
+    function serializeState() {
+        return {
+            dadosRios, empurradores, barcacas, rotas, variaveis,
+            exportDate: new Date().toISOString(),
+            version: '2.0'
+        };
+    }
+
+    function applyLoadedState(data) {
+        dadosRios    = data.dadosRios || [];
+        empurradores = data.empurradores || [];
+        barcacas     = data.barcacas || [];
+        rotas        = data.rotas || [];
+        variaveis    = Object.assign({
+            abaco: 1.03, faq: 0.50, anosProjecao: 3,
+            cenarios: { otimista:{abaco:null,faq:null}, medio:{abaco:null,faq:null}, pessimista:{abaco:null,faq:null} },
+            cenariosCustom: []
+        }, data.variaveis || {});
+        if (!variaveis.cenariosCustom) variaveis.cenariosCustom = [];
+        if (!variaveis.cenarios) {
+            variaveis.cenarios = { otimista:{abaco:null,faq:null}, medio:{abaco:null,faq:null}, pessimista:{abaco:null,faq:null} };
+        }
+        if (!variaveis.caladosVisiveis) variaveis.caladosVisiveis = {};
+        // Retrocompatibilidade: garante campo ativo nos ativos existentes
+        empurradores.forEach(e => { if (e.ativo === undefined) e.ativo = true; });
+        barcacas.forEach(b => { if (b.ativo === undefined) b.ativo = true; });
+    }
+
+    function applyVariaveisToInputs() {
+        document.getElementById('abaco').value        = variaveis.abaco;
+        document.getElementById('faq').value          = variaveis.faq;
+        document.getElementById('anosProjecao').value = variaveis.anosProjecao ?? 3;
+        atualizarInfoAnosProjecao();
+        renderCaladosToggle();
+    }
+
+    function saveToLocalStorage() {
+        localStorage.setItem('secaTrackData', JSON.stringify(serializeState()));
+        scheduleFolderSave();
+    }
+
+    function loadFromLocalStorage() {
+        const saved = localStorage.getItem('secaTrackData');
+        if (!saved) return;
+        try { applyLoadedState(JSON.parse(saved)); }
+        catch (e) { console.error('Erro ao carregar localStorage:', e); }
+    }
+
+    function exportData() {
+        const blob = new Blob([JSON.stringify(serializeState(), null, 2)], { type:'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `seca-track-backup-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    function importData(input) {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const data = JSON.parse(e.target.result);
+                if (confirm(`Importar ${file.name}? Substitui todos os dados atuais.`)) {
+                    applyLoadedState(data);
+                    applyVariaveisToInputs();
+                    saveToLocalStorage();
+                    updateAllViews();
+                    alert('Dados importados com sucesso.');
+                }
+            } catch (err) { alert('Erro ao importar: ' + err.message); }
+        };
+        reader.readAsText(file);
+        input.value = '';
+    }
+
+    // ---- File System Access API (pasta local) ----
+    async function pickDatabaseFolder() {
+        if (!('showDirectoryPicker' in window)) {
+            alert('Seu navegador não suporta seleção de pasta (use Chrome/Edge recentes). Use Exportar/Importar manualmente.');
+            return;
+        }
+        try {
+            const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+            dbDirHandle = handle;
+            await persistDbHandle(handle);
+
+            // Se já existir arquivo na pasta, perguntar se carrega
+            const existing = await tryReadDbFromFolder();
+            if (existing) {
+                if (confirm('Encontrei um seca-track-db.json na pasta. Carregar os dados desse arquivo? (substituirá os dados atuais)')) {
+                    applyLoadedState(existing);
+                    applyVariaveisToInputs();
+                    saveToLocalStorage();
+                    updateAllViews();
+                }
+            } else {
+                await writeDbToFolder();
+            }
+            updateDbStatus();
+        } catch (e) {
+            if (e.name !== 'AbortError') alert('Erro ao selecionar pasta: ' + e.message);
+        }
+    }
+
+    async function tryReadDbFromFolder() {
+        if (!dbDirHandle) return null;
+        try {
+            const fileHandle = await dbDirHandle.getFileHandle(DB_FILE_NAME, { create: false });
+            const file = await fileHandle.getFile();
+            const text = await file.text();
+            return JSON.parse(text);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    async function writeDbToFolder() {
+        if (!dbDirHandle) return;
+        try {
+            const perm = await ensurePermission(dbDirHandle, 'readwrite');
+            if (!perm) return;
+            const fileHandle = await dbDirHandle.getFileHandle(DB_FILE_NAME, { create: true });
+            const writable = await fileHandle.createWritable();
+            await writable.write(JSON.stringify(serializeState(), null, 2));
+            await writable.close();
+        } catch (e) {
+            console.warn('Falha ao escrever na pasta:', e);
+        }
+    }
+
+    async function ensurePermission(handle, mode) {
+        if (!handle.queryPermission) return true;
+        const q = await handle.queryPermission({ mode });
+        if (q === 'granted') return true;
+        const r = await handle.requestPermission({ mode });
+        return r === 'granted';
+    }
+
+    async function saveToFolderManual() {
+        if (!dbDirHandle) { alert('Escolha uma pasta primeiro em "Pasta DB".'); return; }
+        await writeDbToFolder();
+        alert('Base salva na pasta.');
+    }
+
+    let _folderSaveTimer = null;
+    function scheduleFolderSave() {
+        if (!dbDirHandle) return;
+        clearTimeout(_folderSaveTimer);
+        _folderSaveTimer = setTimeout(writeDbToFolder, 700);
+    }
+
+    // Persistir handle entre sessões usando IndexedDB
+    function idbOpen() {
+        return new Promise((res, rej) => {
+            const req = indexedDB.open('seca-track-meta', 1);
+            req.onupgradeneeded = () => req.result.createObjectStore('kv');
+            req.onsuccess = () => res(req.result);
+            req.onerror   = () => rej(req.error);
+        });
+    }
+    async function persistDbHandle(handle) {
+        try {
+            const db = await idbOpen();
+            const tx = db.transaction('kv','readwrite');
+            tx.objectStore('kv').put(handle, 'dbDirHandle');
+            return new Promise(r => tx.oncomplete = r);
+        } catch (e) { console.warn(e); }
+    }
+    async function restoreDbHandle() {
+        try {
+            const db = await idbOpen();
+            const tx = db.transaction('kv','readonly');
+            const req = tx.objectStore('kv').get('dbDirHandle');
+            const handle = await new Promise(r => { req.onsuccess = () => r(req.result); });
+            if (!handle) return;
+            const ok = await ensurePermission(handle, 'readwrite');
+            if (!ok) return;
+            dbDirHandle = handle;
+            const existing = await tryReadDbFromFolder();
+            if (existing) {
+                applyLoadedState(existing);
+                applyVariaveisToInputs();
+                localStorage.setItem('secaTrackData', JSON.stringify(serializeState()));
+            }
+        } catch (e) { /* sem handle salvo */ }
+    }
+
+    function updateDbStatus() {
+        const el = document.getElementById('dbStatusText');
+        const chip = document.getElementById('dbStatus');
+        if (dbDirHandle) {
+            el.textContent = `Pasta: ${dbDirHandle.name}`;
+            chip.classList.add('live');
+        } else {
+            el.textContent = 'Armazenamento: local (navegador)';
+            chip.classList.remove('live');
+        }
+    }
+
+    // ---------- Navegação ----------
+    function switchTab(tab) {
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+        document.querySelectorAll('[id^="tab-"]').forEach(el => {
+            el.classList.remove('tab-active');
+            el.classList.add('text-gray-500');
+        });
+        document.getElementById(`content-${tab}`).classList.remove('hidden');
+        document.getElementById(`tab-${tab}`).classList.add('tab-active');
+        document.getElementById(`tab-${tab}`).classList.remove('text-gray-500');
+
+        if (tab === 'dashboard') updateDashboard();
+        if (tab === 'rios')      updateRioChart();
+    }
+
+    function updateAllViews() {
+        renderTabelaRios();
+        renderTabelaBarcacas();
+        renderTabelaEmpurradores();
+        renderTabelaRotas();
+        updateSelectRios();
+        updateFiltroRio();
+        renderCaladosToggle();
+        updateRioChart();
+        if (!document.getElementById('content-dashboard').classList.contains('hidden')) updateDashboard();
+    }
+
+    // ==========================================================================
+    // MÓDULO 1: NÍVEL DOS RIOS
+    // ==========================================================================
+
+    function handleExcelUpload(input) {
+        const file = input.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type:'array', cellDates:true });
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet, { raw:false, defval:'' });
+
+                let count = 0, errors = 0;
+                jsonData.forEach(row => {
+                    const keys = Object.keys(row);
+                    const dataVal  = row['Data'] ?? row['data'] ?? row['DATA'] ?? row[keys[0]];
+                    const nomeVal  = row['Nome do Rio'] ?? row['Rio'] ?? row['rio'] ?? row[keys[1]];
+                    const nivelVal = row['Nível do Rio'] ?? row['Nível'] ?? row['nivel'] ?? row['Nivel'] ?? row[keys[2]];
+
+                    if (dataVal && nomeVal && nivelVal !== '' && nivelVal !== undefined && nivelVal !== null) {
+                        const dataISO = parseDateToISO(dataVal);
+                        const nivel   = parseNivel(nivelVal);
+                        if (!dataISO || isNaN(nivel)) { errors++; return; }
+                        dadosRios.push({
+                            id: Date.now() + Math.random(),
+                            data: dataISO,
+                            nome: String(nomeVal).trim(),
+                            nivel
+                        });
+                        count++;
+                    }
+                });
+
+                invalidarCacheProjecao();
+                saveToLocalStorage();
+                updateFiltroRio();
+                renderTabelaRios();
+                updateRioChart();
+                alert(`${count} registros importados.${errors ? ' ' + errors + ' linhas ignoradas (formato inválido).' : ''}`);
+            } catch (err) { alert('Erro ao ler arquivo: ' + err.message); }
+        };
+        reader.readAsArrayBuffer(file);
+        input.value = '';
+    }
+
+    function parseDateToISO(v) {
+        if (v instanceof Date && !isNaN(v)) return v.toISOString().split('T')[0];
+        const s = String(v).trim();
+        if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0,10);
+        const br = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+        if (br) {
+            let [, d, m, y] = br;
+            if (y.length === 2) y = (parseInt(y) > 50 ? '19' : '20') + y;
+            return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+        }
+        const d2 = new Date(s);
+        return isNaN(d2) ? null : d2.toISOString().split('T')[0];
+    }
+
+    function parseNivel(v) {
+        if (typeof v === 'number') return v;
+        return parseFloat(String(v).replace(',', '.'));
+    }
+
+    function openManualEntryModal() {
+        document.getElementById('rioData').value = new Date().toISOString().split('T')[0];
+        document.getElementById('rioNome').value = '';
+        document.getElementById('rioNivel').value = '';
+        document.getElementById('modalRio').classList.add('active');
+    }
+
+    function saveRio() {
+        const data  = document.getElementById('rioData').value;
+        const nome  = document.getElementById('rioNome').value.trim();
+        const nivel = parseNivel(document.getElementById('rioNivel').value);
+        if (!data || !nome || isNaN(nivel)) { alert('Preencha todos os campos.'); return; }
+
+        dadosRios.push({ id: Date.now() + Math.random(), data, nome, nivel });
+        invalidarCacheProjecao();
+        saveToLocalStorage();
+        updateFiltroRio();
+        renderTabelaRios();
+        updateRioChart();
+        closeModal('rio');
+    }
+
+    function deleteRio(id) {
+        if (!confirm('Excluir este registro?')) return;
+        dadosRios = dadosRios.filter(r => r.id !== id);
+        invalidarCacheProjecao();
+        saveToLocalStorage();
+        renderTabelaRios();
+        updateRioChart();
+    }
+
+    function clearRioData() {
+        if (!confirm('Limpar TODOS os dados de rios?')) return;
+        dadosRios = [];
+        invalidarCacheProjecao();
+        saveToLocalStorage();
+        updateFiltroRio();
+        renderTabelaRios();
+        updateRioChart();
+    }
+
+    function renderTabelaRios() {
+        const tbody = document.getElementById('tbodyRios');
+        tbody.innerHTML = '';
+        const filtro = document.getElementById('filtroRio').value;
+
+        const list = dadosRios.filter(r => !filtro || r.nome === filtro);
+        const sorted = [...list].sort((a,b) => new Date(b.data) - new Date(a.data));
+
+        sorted.slice(0, 100).forEach(rio => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${formatDate(rio.data)}</td>
+                <td>${rio.nome}</td>
+                <td>${rio.nivel.toFixed(2)}</td>
+                <td><button onclick="deleteRio(${rio.id})" class="text-red-600 hover:text-red-800"><i data-lucide="trash-2" class="w-4 h-4"></i></button></td>
+            `;
+            tbody.appendChild(tr);
+        });
+        document.getElementById('rioCount').textContent = `${list.length} registros${filtro ? ' (filtrados)' : ''}`;
+        lucide.createIcons();
+    }
+
+    function updateFiltroRio() {
+        const sel = document.getElementById('filtroRio');
+        const current = sel.value;
+        const rios = [...new Set(dadosRios.map(r => r.nome))].sort();
+        sel.innerHTML = '<option value="">Todos os rios</option>' + rios.map(r => `<option value="${r}" ${r===current?'selected':''}>${r}</option>`).join('');
+    }
+
+    function updateVariaveis() {
+        variaveis.abaco        = parseFloat(document.getElementById('abaco').value)        || 1.03;
+        variaveis.faq          = parseFloat(document.getElementById('faq').value)          || 0.50;
+        variaveis.anosProjecao = parseInt(document.getElementById('anosProjecao').value)   || 3;
+        atualizarInfoAnosProjecao();
+        invalidarCacheProjecao();
+        saveToLocalStorage();
+        if (!document.getElementById('content-dashboard').classList.contains('hidden')) updateDashboard();
+        updateRioChart();
+    }
+
+    function atualizarInfoAnosProjecao() {
+        const anos = variaveis.anosProjecao || 3;
+        const el = document.getElementById('anosProjecaoInfo');
+        if (!el) return;
+
+        // Descobre quantos anos de dados existem de fato nos rios carregados
+        if (dadosRios.length === 0) { el.textContent = '(sem dados carregados)'; return; }
+        const datas = dadosRios.map(r => new Date(r.data + 'T00:00:00')).filter(d => !isNaN(d));
+        const minAno = Math.min(...datas.map(d => d.getFullYear()));
+        const maxAno = Math.max(...datas.map(d => d.getFullYear()));
+        const anosDisponiveis = maxAno - minAno + 1;
+
+        const anosUsados = Math.min(anos, anosDisponiveis);
+        el.textContent = anosUsados < anos
+            ? `(base tem ${anosDisponiveis} ano${anosDisponiveis>1?'s':''} — usando todos)`
+            : `(usando dados de ${maxAno - anosUsados + 1}–${maxAno})`;
+    }
+
+    // ==========================================================================
+    // REGRESSÃO
+    // ==========================================================================
+
+    function calcularProjecaoRio(nomeRio) {
+        if (_projCache[nomeRio]) return _projCache[nomeRio];
+        const dadosRio = dadosRios.filter(r => r.nome === nomeRio);
+        if (dadosRio.length < 3) return null;
+
+        // Média e desvio-padrão por mês
+        const buckets = Array.from({length:12}, () => []);
+        dadosRio.forEach(r => {
+            const m = new Date(r.data + 'T00:00:00').getMonth();
+            if (!isNaN(r.nivel)) buckets[m].push(r.nivel);
+        });
+
+        const mediaMes = buckets.map(arr => arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : null);
+        const stdMes   = buckets.map((arr, i) => {
+            if (arr.length < 2) return 0;
+            const m = mediaMes[i];
+            return Math.sqrt(arr.reduce((s,v) => s + (v-m)**2, 0) / arr.length);
+        });
+        const minMes = buckets.map(arr => arr.length ? Math.min(...arr) : null);
+        const maxMes = buckets.map(arr => arr.length ? Math.max(...arr) : null);
+
+        const fallbackMedia = (() => {
+            const valid = mediaMes.filter(v => v !== null);
+            return valid.length ? valid.reduce((a,b)=>a+b,0)/valid.length : 0;
+        })();
+        const fallbackStd   = (() => {
+            const valid = stdMes.filter((_,i) => mediaMes[i] !== null);
+            return valid.length ? valid.reduce((a,b)=>a+b,0)/valid.length : 0;
+        })();
+
+        // Tendência linear: filtra pelos N anos configurados (ou todos se base menor)
+        const anos = variaveis.anosProjecao || 3;
+        const corte = new Date();
+        corte.setFullYear(corte.getFullYear() - anos);
+        const dadosTendencia = dadosRio
+            .filter(r => new Date(r.data + 'T00:00:00') >= corte)
+            .sort((a,b) => new Date(a.data) - new Date(b.data));
+        // Se o período escolhido tiver menos de 2 pontos, usa todos os dados
+        const ult = dadosTendencia.length >= 2
+            ? dadosTendencia
+            : [...dadosRio].sort((a,b) => new Date(a.data) - new Date(b.data));
+        let tendencia = 0;
+        if (ult.length >= 2) {
+            const n = ult.length;
+            const xs = ult.map((_,i) => i);
+            const ys = ult.map(r => r.nivel);
+            const mx = xs.reduce((a,b)=>a+b,0)/n;
+            const my = ys.reduce((a,b)=>a+b,0)/n;
+            const num = xs.reduce((s,x,i)=> s + (x-mx)*(ys[i]-my), 0);
+            const den = xs.reduce((s,x)=> s + (x-mx)**2, 0);
+            tendencia = den === 0 ? 0 : num/den; // m por passo
+        }
+
+        const anoAtual = new Date().getFullYear();
+        const mesAtual = new Date().getMonth();
+
+        const custom = {};
+        (variaveis.cenariosCustom || []).forEach(c => { custom[c.id] = []; });
+
+        const projecao = { historico:[], medio:[], otimista:[], pessimista:[], labels:[], mesesIdx:[], custom, minMes, maxMes };
+
+        // Histórico do ano atual (média mensal observada)
+        const obsPorMes = Array.from({length:12}, () => []);
+        dadosRio.forEach(r => {
+            const d = new Date(r.data + 'T00:00:00');
+            if (d.getFullYear() === anoAtual) obsPorMes[d.getMonth()].push(r.nivel);
+        });
+
+        for (let m = 0; m <= mesAtual; m++) {
+            if (obsPorMes[m].length) {
+                const mediaObs = obsPorMes[m].reduce((a,b)=>a+b,0)/obsPorMes[m].length;
+                projecao.historico.push(mediaObs);
+                projecao.medio.push(null);
+                projecao.otimista.push(null);
+                projecao.pessimista.push(null);
+                Object.keys(custom).forEach(id => custom[id].push(null));
+                projecao.labels.push(`${MESES[m]}/${anoAtual}`);
+                projecao.mesesIdx.push(m);
+            }
+        }
+
+        // Projeção: todos os meses ainda não observados até dezembro
+        for (let m = 0; m < 12; m++) {
+            if (m <= mesAtual && obsPorMes[m].length) continue;
+            const base = mediaMes[m] !== null ? mediaMes[m] : fallbackMedia;
+            const std  = stdMes[m] > 0 ? stdMes[m] : fallbackStd;
+            const ajuste = tendencia * Math.max(1, m - mesAtual);
+
+            const medio      = Math.max(0, base + ajuste);
+            const otimista   = Math.max(0, medio + std);
+            const pessimista = Math.max(0, medio - std);
+
+            projecao.historico.push(null);
+            projecao.medio.push(medio);
+            projecao.otimista.push(otimista);
+            projecao.pessimista.push(pessimista);
+            (variaveis.cenariosCustom || []).forEach(c => {
+                custom[c.id].push(projetarNivelCenarioCustom(c, m, base, std, ajuste));
+            });
+            projecao.labels.push(`${MESES[m]}/${anoAtual}`);
+            projecao.mesesIdx.push(m);
+        }
+
+        _projCache[nomeRio] = projecao;
+        return projecao;
+    }
+
+    function getProjecaoPorMes(nomeRio) {
+        const p = calcularProjecaoRio(nomeRio);
+        if (!p) return null;
+        const map = {};
+        p.mesesIdx.forEach((m, i) => {
+            const base = p.historico[i];
+            map[m] = {
+                historico:  base,
+                medio:      p.medio[i]      ?? base,
+                otimista:   p.otimista[i]   ?? base,
+                pessimista: p.pessimista[i] ?? base,
+                custom: {}
+            };
+            Object.keys(p.custom || {}).forEach(id => {
+                map[m].custom[id] = p.custom[id][i] ?? base;
+            });
+        });
+        return map;
+    }
+
+    function updateRioChart() {
+        atualizarInfoAnosProjecao();
+
+        // Atualiza nota do gráfico com os anos reais usados
+        const notaEl = document.getElementById('notaGraficoRios');
+        if (notaEl) {
+            const anos = variaveis.anosProjecao || 3;
+            const datas = dadosRios.map(r => new Date(r.data + 'T00:00:00')).filter(d => !isNaN(d));
+            const anosDisponiveis = datas.length ? Math.max(...datas.map(d => d.getFullYear())) - Math.min(...datas.map(d => d.getFullYear())) + 1 : 0;
+            const anosUsados = anosDisponiveis > 0 ? Math.min(anos, anosDisponiveis) : anos;
+            notaEl.textContent = `Cenários: média histórica por mês ± desvio-padrão + tendência linear dos últimos ${anosUsados} ano${anosUsados !== 1 ? 's' : ''}${anosUsados < anos ? ` (máximo disponível na base)` : ''}. Piso em 0.`;
+        }
+
+        const ctx = document.getElementById('chartRios').getContext('2d');
+        if (chartRios) chartRios.destroy();
+
+        const filtro = document.getElementById('filtroRio').value;
+        const rios = [...new Set(dadosRios.map(r => r.nome))];
+        if (rios.length === 0) {
+            chartRios = new Chart(ctx, {
+                type:'line', data:{labels:[],datasets:[]},
+                options:{responsive:true, maintainAspectRatio:false,
+                    plugins:{ title:{display:true, text:'Nenhum dado carregado. Importe ou insira medições.'}}}
+            });
+            return;
+        }
+
+        const rioSel = filtro || rios.find(r => calcularProjecaoRio(r)) || rios[0];
+        const proj = calcularProjecaoRio(rioSel);
+
+        if (!proj) {
+            chartRios = new Chart(ctx, {
+                type:'line', data:{labels:[],datasets:[]},
+                options:{responsive:true, maintainAspectRatio:false,
+                    plugins:{ title:{display:true, text:`Dados insuficientes para projeção de ${rioSel} (mínimo 3 registros).`}}}
+            });
+            return;
+        }
+
+        // Conectar histórico e projeção no último ponto observado para unir as linhas
+        const lastHistIdx = proj.historico.reduce((acc,v,i) => v !== null ? i : acc, -1);
+        const medioDs = proj.medio.slice();
+        const otimDs  = proj.otimista.slice();
+        const pessDs  = proj.pessimista.slice();
+        if (lastHistIdx >= 0) {
+            const vH = proj.historico[lastHistIdx];
+            medioDs[lastHistIdx] = vH;
+            otimDs[lastHistIdx]  = vH;
+            pessDs[lastHistIdx]  = vH;
+        }
+
+        // Datasets base — Otimista e Pessimista com fill entre eles (banda de incerteza)
+        const datasets = [
+            { label:'Histórico',      data: proj.historico, borderColor:'#374151', backgroundColor:'#374151', tension:0.25, pointRadius:4, spanGaps:false, borderWidth:2, fill:false },
+            { label:'Projeção Média', data: medioDs,        borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,0.08)', borderDash:[6,4], tension:0.25, pointRadius:3, spanGaps:false, fill:false },
+            { label:'Otimista',       data: otimDs,         borderColor:'#10b981', backgroundColor:'rgba(59,130,246,0.10)', borderDash:[6,4], tension:0.25, pointRadius:3, spanGaps:false, fill:'+1' },
+            { label:'Pessimista',     data: pessDs,         borderColor:'#ef4444', backgroundColor:'rgba(59,130,246,0.10)', borderDash:[6,4], tension:0.25, pointRadius:3, spanGaps:false, fill:false }
+        ];
+
+        // Datasets dos cenários customizados
+        (variaveis.cenariosCustom || []).forEach(c => {
+            const ds = (proj.custom[c.id] || []).slice();
+            if (lastHistIdx >= 0 && proj.historico[lastHistIdx] !== null) ds[lastHistIdx] = proj.historico[lastHistIdx];
+            datasets.push({
+                label: c.nome,
+                data: ds,
+                borderColor: c.cor,
+                backgroundColor: c.cor,
+                borderDash: [3, 3],
+                tension: 0.25,
+                pointRadius: 3,
+                spanGaps: false,
+                borderWidth: 2
+            });
+        });
+
+        // Legenda dinâmica no header do card
+        const legendaEl = document.getElementById('legendaGraficoRios');
+        if (legendaEl) {
+            const base = [
+                { cor:'#374151', label:'Histórico' },
+                { cor:'#10b981', label:'Otimista' },
+                { cor:'#3b82f6', label:'Médio' },
+                { cor:'#ef4444', label:'Pessimista' }
+            ];
+            const custom = (variaveis.cenariosCustom || []).map(c => ({ cor: c.cor, label: c.nome }));
+            legendaEl.innerHTML = [...base, ...custom].map(l =>
+                `<span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full shrink-0" style="background:${l.cor}"></span>${l.label}</span>`
+            ).join('');
+        }
+
+        // Linhas de calado mínimo dos ativos visíveis
+        let corIdx = 0;
+        const visiveis = variaveis.caladosVisiveis || {};
+        const addCaladoLine = (key, nome, caladoMin) => {
+            if (!visiveis[key]) return;
+            const calMin = parseFloat(caladoMin);
+            if (isNaN(calMin)) return;
+            const nivelMin = calMin + variaveis.abaco - variaveis.faq;
+            const cor = CALADO_CORES[corIdx++ % CALADO_CORES.length];
+            datasets.push({
+                label: `${nome} (cal. op. mín. ${nivelMin.toFixed(2)} m)`,
+                data: proj.labels.map(() => nivelMin),
+                borderColor: cor,
+                backgroundColor: cor,
+                borderDash: [8, 4],
+                borderWidth: 1.5,
+                pointRadius: 0,
+                spanGaps: true,
+                tension: 0,
+                order: -1
+            });
+        };
+        empurradores.filter(e => e.ativo !== false).forEach(e => addCaladoLine('e-' + e.id, e.nome, e.caladoMin));
+        barcacas.filter(b => b.ativo !== false).forEach(b => addCaladoLine('b-' + b.id, b.nome, b.caladoMin));
+
+        // Tooltip com min/max histórico
+        const minMes = proj.minMes || [];
+        const maxMes = proj.maxMes || [];
+
+        chartRios = new Chart(ctx, {
+            type:'line',
+            data: { labels: proj.labels, datasets },
+            options: {
+                responsive:true, maintainAspectRatio:false,
+                interaction:{ intersect:false, mode:'index' },
+                plugins:{
+                    title:{ display:true, text: `Projeção: ${rioSel}` },
+                    legend:{ display:false },
+                    tooltip:{
+                        callbacks:{
+                            label: c => `${c.dataset.label}: ${c.parsed.y?.toFixed(2) ?? '-'} m`,
+                            afterBody: (items) => {
+                                if (!items.length) return [];
+                                const labelIdx = proj.labels[items[0].dataIndex];
+                                const mesIdx = proj.mesesIdx[items[0].dataIndex];
+                                if (mesIdx === undefined) return [];
+                                const mn = minMes[mesIdx];
+                                const mx = maxMes[mesIdx];
+                                if (mn === null || mx === null) return [];
+                                return [`─────────────────`, `Histórico: mín ${mn.toFixed(2)} m  /  máx ${mx.toFixed(2)} m`];
+                            }
+                        }
+                    }
+                },
+                scales:{ y:{ title:{display:true,text:'Nível (m)'}, beginAtZero:true } }
+            }
+        });
+
+        renderAderencia(rioSel);
+    }
+
+    function exportarProjecaoCSV() {
+        const filtro = document.getElementById('filtroRio').value;
+        const rios = [...new Set(dadosRios.map(r => r.nome))];
+        const rioSel = filtro || rios[0];
+        if (!rioSel) { alert('Nenhum rio disponível para exportar.'); return; }
+        const proj = calcularProjecaoRio(rioSel);
+        if (!proj) { alert('Dados insuficientes para projeção.'); return; }
+
+        const customIds = (variaveis.cenariosCustom || []).map(c => c.id);
+        const customNomes = (variaveis.cenariosCustom || []).map(c => c.nome);
+
+        const cabecalho = ['Mês', 'Histórico (m)', 'Projeção Média (m)', 'Otimista (m)', 'Pessimista (m)',
+            `Mín Histórico (m)`, `Máx Histórico (m)`, ...customNomes];
+        const linhas = proj.labels.map((lbl, i) => {
+            const mesIdx = proj.mesesIdx[i];
+            const row = [
+                lbl,
+                proj.historico[i] !== null ? proj.historico[i].toFixed(2) : '',
+                proj.medio[i]     !== null ? proj.medio[i].toFixed(2)     : '',
+                proj.otimista[i]  !== null ? proj.otimista[i].toFixed(2)  : '',
+                proj.pessimista[i]!== null ? proj.pessimista[i].toFixed(2): '',
+                (proj.minMes && proj.minMes[mesIdx] !== null) ? proj.minMes[mesIdx].toFixed(2) : '',
+                (proj.maxMes && proj.maxMes[mesIdx] !== null) ? proj.maxMes[mesIdx].toFixed(2) : '',
+                ...customIds.map(id => {
+                    const v = (proj.custom[id] || [])[i];
+                    return v !== null && v !== undefined ? v.toFixed(2) : '';
+                })
+            ];
+            return row.join(';');
+        });
+
+        const csv = '\uFEFF' + [cabecalho.join(';'), ...linhas].join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `projecao-${rioSel.replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    function renderCaladosToggle() {
+        const painel = document.getElementById('painelCalados');
+        const container = document.getElementById('botoesCalados');
+        if (!painel || !container) return;
+
+        const ativos = [
+            ...empurradores.filter(e => e.ativo !== false).map(e => ({ key: 'e-' + e.id, nome: e.nome, calado: parseFloat(e.caladoMin), grupo: 'Empurrador' })),
+            ...barcacas.filter(b => b.ativo !== false).map(b => ({ key: 'b-' + b.id, nome: b.nome || b.tipo, calado: parseFloat(b.caladoMin), grupo: 'Barcaça' }))
+        ].filter(a => !isNaN(a.calado));
+
+        if (ativos.length === 0) { painel.style.display = 'none'; return; }
+        painel.style.display = '';
+
+        const visiveis = variaveis.caladosVisiveis || {};
+        container.innerHTML = ativos.map(a => {
+            const ativo = !!visiveis[a.key];
+            const cls = ativo
+                ? 'text-xs px-2 py-1 rounded-full border font-medium cursor-pointer transition-all bg-purple-100 border-purple-400 text-purple-700'
+                : 'text-xs px-2 py-1 rounded-full border font-medium cursor-pointer transition-all bg-gray-100 border-gray-300 text-gray-500';
+            const caladoOpMin = (a.calado + variaveis.abaco - variaveis.faq).toFixed(2);
+            return `<button class="${cls}" onclick="toggleCalado('${a.key}')" title="${a.grupo}: ${a.nome} — cal. op. mín. ${caladoOpMin} m">${a.nome} ≥${caladoOpMin} m</button>`;
+        }).join('');
+        lucide.createIcons();
+    }
+
+    function toggleCalado(key) {
+        if (!variaveis.caladosVisiveis) variaveis.caladosVisiveis = {};
+        variaveis.caladosVisiveis[key] = !variaveis.caladosVisiveis[key];
+        saveToLocalStorage();
+        renderCaladosToggle();
+        updateRioChart();
+    }
+
+    function calcularAderencia(nomeRio) {
+        const dadosRio = dadosRios.filter(r => r.nome === nomeRio);
+        const anoAtual = new Date().getFullYear();
+
+        const dadosAtuais = dadosRio.filter(r => new Date(r.data + 'T00:00:00').getFullYear() === anoAtual);
+        if (dadosAtuais.length === 0) return null;
+
+        const dadosHist = dadosRio.filter(r => new Date(r.data + 'T00:00:00').getFullYear() < anoAtual);
+        if (dadosHist.length < 3) return null;
+
+        const buckets = Array.from({length:12}, () => []);
+        dadosHist.forEach(r => {
+            const m = new Date(r.data + 'T00:00:00').getMonth();
+            if (!isNaN(r.nivel)) buckets[m].push(r.nivel);
+        });
+        const mediaMes = buckets.map(arr => arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : null);
+
+        const obsPorMes = Array.from({length:12}, () => []);
+        dadosAtuais.forEach(r => {
+            const m = new Date(r.data + 'T00:00:00').getMonth();
+            obsPorMes[m].push(r.nivel);
+        });
+
+        const resultados = [];
+        for (let m = 0; m < 12; m++) {
+            if (obsPorMes[m].length === 0 || mediaMes[m] === null) continue;
+            const real = obsPorMes[m].reduce((a,b)=>a+b,0)/obsPorMes[m].length;
+            const proj = mediaMes[m];
+            const erro = real - proj;
+            const erroPct = proj !== 0 ? (Math.abs(erro) / Math.abs(proj)) * 100 : null;
+            resultados.push({ mes: m, real, projetado: proj, erro, erroAbs: Math.abs(erro), erroPct });
+        }
+        return resultados.length ? resultados : null;
+    }
+
+    function renderAderencia(nomeRio) {
+        const card = document.getElementById('cardAderencia');
+        if (!card) return;
+        const anoAtual = new Date().getFullYear();
+        document.getElementById('aderenciaAno').textContent = anoAtual;
+
+        const resultados = calcularAderencia(nomeRio);
+        if (!resultados) { card.style.display = 'none'; return; }
+        card.style.display = '';
+
+        const erroMedio = resultados.reduce((s,r) => s + r.erroAbs, 0) / resultados.length;
+        const erroPctMedio = resultados.filter(r => r.erroPct !== null).reduce((s,r) => s + r.erroPct, 0) / resultados.filter(r => r.erroPct !== null).length;
+        const acuracia = Math.max(0, 100 - erroPctMedio);
+
+        const cor = acuracia >= 85 ? 'green' : acuracia >= 70 ? 'yellow' : 'red';
+        const corClasse = { green: 'text-green-600 border-green-500', yellow: 'text-yellow-600 border-yellow-500', red: 'text-red-600 border-red-500' }[cor];
+        const bgClasse = { green: 'border-green-500', yellow: 'border-yellow-500', red: 'border-red-500' }[cor];
+
+        document.getElementById('aderenciaResumo').innerHTML = `
+            <div class="card p-4 border-l-4 ${bgClasse}">
+                <p class="text-xs text-gray-500 mb-1">Acurácia Média</p>
+                <p class="text-2xl font-bold ${corClasse.split(' ')[0]}">${acuracia.toFixed(1)}%</p>
+                <p class="text-xs text-gray-400">${resultados.length} meses comparados</p>
+            </div>
+            <div class="card p-4 border-l-4 border-gray-400">
+                <p class="text-xs text-gray-500 mb-1">Erro Absoluto Médio</p>
+                <p class="text-2xl font-bold text-gray-700">${erroMedio.toFixed(2)} m</p>
+                <p class="text-xs text-gray-400">MAE</p>
+            </div>
+            <div class="card p-4 border-l-4 border-gray-400">
+                <p class="text-xs text-gray-500 mb-1">Erro Percentual Médio</p>
+                <p class="text-2xl font-bold text-gray-700">${erroPctMedio.toFixed(1)}%</p>
+                <p class="text-xs text-gray-400">MAPE</p>
+            </div>`;
+
+        const tbody = document.getElementById('tbodyAderencia');
+        tbody.innerHTML = resultados.map(r => {
+            const ac = r.erroPct !== null ? Math.max(0, 100 - r.erroPct) : null;
+            const badgeCls = ac === null ? 'badge-info' : ac >= 85 ? 'badge-success' : ac >= 70 ? 'badge-warning' : 'badge-danger';
+            const sinal = r.erro >= 0 ? '+' : '';
+            return `<tr>
+                <td>${MESES_FULL[r.mes]}</td>
+                <td>${r.projetado.toFixed(2)} m</td>
+                <td>${r.real.toFixed(2)} m</td>
+                <td class="${r.erro >= 0 ? 'text-blue-600' : 'text-red-600'}">${sinal}${r.erro.toFixed(2)} m</td>
+                <td>${r.erroPct !== null ? r.erroPct.toFixed(1) + '%' : '-'}</td>
+                <td><span class="badge ${badgeCls}">${ac !== null ? ac.toFixed(0) + '%' : '-'}</span></td>
+            </tr>`;
+        }).join('');
+        lucide.createIcons();
+    }
+
+    // ==========================================================================
+    // MÓDULO 2: ATIVOS (Barcaças e Empurradores)
+    // ==========================================================================
+
+    function openModal(tipo, id=null) {
+        if (tipo === 'barcaca') {
+            document.getElementById('tituloBarcaca').textContent = id ? 'Editar Tipo de Barcaça' : 'Novo Tipo de Barcaça';
+            document.getElementById('barcacaId').value = id || '';
+            if (id) {
+                const b = barcacas.find(x => x.id === id);
+                document.getElementById('barcacaNome').value = b.nome;
+                document.getElementById('barcacaQtd').value = b.quantidade ?? 1;
+                document.getElementById('barcacaCaladoMin').value = b.caladoMin;
+                document.getElementById('barcacaVolMin').value    = b.volMin;
+                document.getElementById('barcacaCaladoMax').value = b.caladoMax ?? '';
+                document.getElementById('barcacaVolMax').value    = b.volMax ?? '';
+            } else {
+                ['barcacaNome','barcacaCaladoMin','barcacaVolMin','barcacaCaladoMax','barcacaVolMax'].forEach(k => document.getElementById(k).value = '');
+                document.getElementById('barcacaQtd').value = 1;
+            }
+            document.getElementById('modalBarcaca').classList.add('active');
+
+        } else if (tipo === 'empurrador') {
+            document.getElementById('tituloEmpurrador').textContent = id ? 'Editar Empurrador' : 'Novo Empurrador';
+            document.getElementById('empurradorId').value = id || '';
+            if (id) {
+                const e = empurradores.find(x => x.id === id);
+                document.getElementById('empurradorNome').value        = e.nome;
+                document.getElementById('empurradorPotencia').value    = e.potencia ?? '';
+                document.getElementById('empurradorCaladoMin').value   = e.caladoMin;
+                document.getElementById('empurradorCaladoMax').value   = e.caladoMax ?? '';
+                document.getElementById('empurradorBarcacas').value    = e.qtdBarcacas ?? 4;
+            } else {
+                ['empurradorNome','empurradorPotencia','empurradorCaladoMin','empurradorCaladoMax'].forEach(k => document.getElementById(k).value = '');
+                document.getElementById('empurradorBarcacas').value = 4;
+            }
+            document.getElementById('modalEmpurrador').classList.add('active');
+
+        } else if (tipo === 'rota') {
+            document.getElementById('tituloRota').textContent = id ? 'Editar Rota' : 'Nova Rota';
+            document.getElementById('rotaId').value = id || '';
+            updateSelectRios();
+            if (id) {
+                const r = rotas.find(x => x.id === id);
+                document.getElementById('rotaNome').value = r.nome;
+                document.getElementById('rotaRio').value  = r.rio;
+                document.getElementById('rotaTempoViagem').value    = r.tempoViagemH ?? '';
+                document.getElementById('rotaTonHoraOrigem').value  = r.tonHoraOrigem ?? '';
+                document.getElementById('rotaTonHoraDestino').value = r.tonHoraDestino ?? '';
+                document.getElementById('rotaTempoEspera').value    = r.tempoEsperaH ?? 0;
+                (r.metas||[]).forEach((v,i) => {
+                    const inp = document.getElementById(`meta${MESES[i]}`);
+                    if (inp) inp.value = v || '';
+                });
+                renderEmpurradoresRota(r.empurradores || []);
+            } else {
+                document.getElementById('rotaNome').value = '';
+                document.getElementById('rotaRio').value  = '';
+                document.getElementById('rotaTempoViagem').value    = 72;
+                document.getElementById('rotaTonHoraOrigem').value  = 1000;
+                document.getElementById('rotaTonHoraDestino').value = 1000;
+                document.getElementById('rotaTempoEspera').value    = 0;
+                MESES.forEach(m => document.getElementById(`meta${m}`).value = '');
+                renderEmpurradoresRota([]);
+            }
+            document.getElementById('modalRota').classList.add('active');
+
+        } else if (tipo === 'cenarios') {
+            const c = variaveis.cenarios;
+            document.getElementById('cenOtimistaAbaco').value    = c.otimista.abaco ?? '';
+            document.getElementById('cenOtimistaFaq').value      = c.otimista.faq   ?? '';
+            document.getElementById('cenMedioAbaco').value       = c.medio.abaco    ?? '';
+            document.getElementById('cenMedioFaq').value         = c.medio.faq      ?? '';
+            document.getElementById('cenPessimistaAbaco').value  = c.pessimista.abaco ?? '';
+            document.getElementById('cenPessimistaFaq').value    = c.pessimista.faq   ?? '';
+            renderListaCenariosCustom();
+            document.getElementById('modalCenarios').classList.add('active');
+        }
+    }
+
+    function closeModal(tipo) {
+        const id = 'modal' + tipo.charAt(0).toUpperCase() + tipo.slice(1);
+        document.getElementById(id).classList.remove('active');
+    }
+
+    function saveBarcaca() {
+        const id = document.getElementById('barcacaId').value;
+        const nome      = document.getElementById('barcacaNome').value.trim();
+        const quantidade = parseInt(document.getElementById('barcacaQtd').value) || 0;
+        const caladoMin = parseFloat(document.getElementById('barcacaCaladoMin').value);
+        const volMin    = parseFloat(document.getElementById('barcacaVolMin').value);
+        const caladoMax = parseFloat(document.getElementById('barcacaCaladoMax').value);
+        const volMax    = parseFloat(document.getElementById('barcacaVolMax').value);
+
+        if (!nome || quantidade<=0 || isNaN(caladoMin) || isNaN(volMin) || isNaN(caladoMax) || isNaN(volMax)) {
+            alert('Preencha todos os campos obrigatórios (nome, qtd, calado mín/máx e volumes mín/máx).');
+            return;
+        }
+        if (caladoMax <= caladoMin) { alert('Calado máximo deve ser maior que o mínimo.'); return; }
+
+        const existing = id ? barcacas.find(x => x.id == parseFloat(id)) : null;
+        const b = { id: id ? parseFloat(id) : Date.now() + Math.random(), nome, quantidade, caladoMin, volMin, caladoMax, volMax, ativo: existing ? (existing.ativo ?? true) : true };
+        if (id) {
+            const i = barcacas.findIndex(x => x.id == id);
+            barcacas[i] = b;
+        } else { barcacas.push(b); }
+
+        saveToLocalStorage();
+        renderTabelaBarcacas();
+        renderCaladosToggle();
+        updateRioChart();
+        closeModal('barcaca');
+    }
+
+    function saveEmpurrador() {
+        const id = document.getElementById('empurradorId').value;
+        const nome        = document.getElementById('empurradorNome').value.trim();
+        const potencia    = parseFloat(document.getElementById('empurradorPotencia').value) || null;
+        const caladoMin   = parseFloat(document.getElementById('empurradorCaladoMin').value);
+        const caladoMaxIn = document.getElementById('empurradorCaladoMax').value;
+        const caladoMax   = caladoMaxIn ? parseFloat(caladoMaxIn) : null;
+        const qtdBarcacas = parseInt(document.getElementById('empurradorBarcacas').value) || 4;
+
+        if (!nome || isNaN(caladoMin) || qtdBarcacas <= 0) { alert('Nome, calado mínimo e qtd de barcaças são obrigatórios.'); return; }
+
+        const existingEmp = id ? empurradores.find(x => x.id == parseFloat(id)) : null;
+        const emp = { id: id ? parseFloat(id) : Date.now() + Math.random(), nome, potencia, caladoMin, caladoMax, qtdBarcacas, ativo: existingEmp ? (existingEmp.ativo ?? true) : true };
+        if (id) {
+            const i = empurradores.findIndex(x => x.id == id);
+            empurradores[i] = emp;
+        } else { empurradores.push(emp); }
+
+        saveToLocalStorage();
+        renderTabelaEmpurradores();
+        renderCaladosToggle();
+        updateRioChart();
+        closeModal('empurrador');
+    }
+
+    function saveCenarios() {
+        variaveis.cenarios = {
+            otimista:   { abaco: numOrNull(document.getElementById('cenOtimistaAbaco').value),   faq: numOrNull(document.getElementById('cenOtimistaFaq').value)   },
+            medio:      { abaco: numOrNull(document.getElementById('cenMedioAbaco').value),      faq: numOrNull(document.getElementById('cenMedioFaq').value)      },
+            pessimista: { abaco: numOrNull(document.getElementById('cenPessimistaAbaco').value), faq: numOrNull(document.getElementById('cenPessimistaFaq').value) }
+        };
+        invalidarCacheProjecao();
+        saveToLocalStorage();
+        if (!document.getElementById('content-dashboard').classList.contains('hidden')) updateDashboard();
+        closeModal('cenarios');
+    }
+
+    function toggleAtivoEmpurrador(id) {
+        const e = empurradores.find(x => x.id == id);
+        if (!e) return;
+        e.ativo = !(e.ativo ?? true);
+        saveToLocalStorage();
+        renderTabelaEmpurradores();
+        renderCaladosToggle();
+        updateRioChart();
+        updateDashboard();
+    }
+
+    function toggleAtivoBarcaca(id) {
+        const b = barcacas.find(x => x.id == id);
+        if (!b) return;
+        b.ativo = !(b.ativo ?? true);
+        saveToLocalStorage();
+        renderTabelaBarcacas();
+        renderCaladosToggle();
+        updateRioChart();
+        updateDashboard();
+    }
+
+    function deleteEmpurrador(id) {
+        if (!confirm('Excluir este empurrador?')) return;
+        empurradores = empurradores.filter(e => e.id !== id);
+        // desassociar de rotas
+        rotas.forEach(r => r.empurradores = (r.empurradores||[]).filter(it => it.empurradorId !== id));
+        saveToLocalStorage();
+        renderTabelaEmpurradores();
+        renderTabelaRotas();
+        renderCaladosToggle();
+        updateRioChart();
+    }
+
+    function deleteBarcaca(id) {
+        if (!confirm('Excluir este tipo de barcaça?')) return;
+        barcacas = barcacas.filter(b => b.id !== id);
+        rotas.forEach(r => r.empurradores = (r.empurradores||[]).map(it => ({...it, tipoBarcacaId: it.tipoBarcacaId === id ? null : it.tipoBarcacaId})));
+        saveToLocalStorage();
+        renderTabelaBarcacas();
+        renderTabelaRotas();
+        renderCaladosToggle();
+        updateRioChart();
+    }
+
+    function renderTabelaBarcacas() {
+        const tbody = document.getElementById('tbodyBarcacas');
+        tbody.innerHTML = '';
+        if (barcacas.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-gray-400 py-4">Nenhum tipo cadastrado</td></tr>';
+            return;
+        }
+        barcacas.forEach(b => {
+            const ativo = b.ativo ?? true;
+            const tr = document.createElement('tr');
+            if (!ativo) tr.classList.add('opacity-50');
+            tr.innerHTML = `
+                <td class="font-medium">
+                    ${b.nome}
+                    ${!ativo ? '<span class="ml-1 text-xs text-gray-400 font-normal">(inativo)</span>' : ''}
+                </td>
+                <td>${b.quantidade}</td>
+                <td>${b.caladoMin.toFixed(2)} m</td>
+                <td>${b.volMin.toLocaleString('pt-BR')}</td>
+                <td>${b.caladoMax.toFixed(2)} m</td>
+                <td>${b.volMax.toLocaleString('pt-BR')}</td>
+                <td class="flex gap-2 items-center">
+                    <button onclick="toggleAtivoBarcaca(${b.id})" title="${ativo ? 'Desativar' : 'Ativar'}"
+                        class="${ativo ? 'text-green-600 hover:text-green-800' : 'text-gray-400 hover:text-green-600'}">
+                        <i data-lucide="${ativo ? 'toggle-right' : 'toggle-left'}" class="w-5 h-5"></i>
+                    </button>
+                    <button onclick="openModal('barcaca', ${b.id})" class="text-blue-600 hover:text-blue-800"><i data-lucide="edit" class="w-4 h-4"></i></button>
+                    <button onclick="deleteBarcaca(${b.id})" class="text-red-600 hover:text-red-800"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                </td>`;
+            tbody.appendChild(tr);
+        });
+        lucide.createIcons();
+    }
+
+    function renderTabelaEmpurradores() {
+        const tbody = document.getElementById('tbodyEmpurradores');
+        tbody.innerHTML = '';
+        if (empurradores.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-gray-400 py-4">Nenhum empurrador cadastrado</td></tr>';
+            return;
+        }
+        empurradores.forEach(e => {
+            const ativo = e.ativo ?? true;
+            const tr = document.createElement('tr');
+            if (!ativo) tr.classList.add('opacity-50');
+            tr.innerHTML = `
+                <td class="font-medium">
+                    ${e.nome}
+                    ${!ativo ? '<span class="ml-1 text-xs text-gray-400 font-normal">(inativo)</span>' : ''}
+                </td>
+                <td>${e.potencia ? e.potencia + ' HP' : '-'}</td>
+                <td>${e.caladoMin.toFixed(2)} m</td>
+                <td>${e.caladoMax ? e.caladoMax.toFixed(2)+' m' : '-'}</td>
+                <td>${e.qtdBarcacas}</td>
+                <td class="flex gap-2 items-center">
+                    <button onclick="toggleAtivoEmpurrador(${e.id})" title="${ativo ? 'Desativar' : 'Ativar'}"
+                        class="${ativo ? 'text-green-600 hover:text-green-800' : 'text-gray-400 hover:text-green-600'}">
+                        <i data-lucide="${ativo ? 'toggle-right' : 'toggle-left'}" class="w-5 h-5"></i>
+                    </button>
+                    <button onclick="openModal('empurrador', ${e.id})" class="text-blue-600 hover:text-blue-800"><i data-lucide="edit" class="w-4 h-4"></i></button>
+                    <button onclick="deleteEmpurrador(${e.id})" class="text-red-600 hover:text-red-800"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                </td>`;
+            tbody.appendChild(tr);
+        });
+        lucide.createIcons();
+    }
+
+    // ==========================================================================
+    // MÓDULO 3: ROTAS
+    // ==========================================================================
+
+    function updateSelectRios() {
+        const sel = document.getElementById('rotaRio');
+        const rios = [...new Set(dadosRios.map(r => r.nome))].sort();
+        sel.innerHTML = '<option value="">Selecione...</option>' + rios.map(r => `<option value="${r}">${r}</option>`).join('');
+    }
+
+    function renderEmpurradoresRota(lista) {
+        const container = document.getElementById('empurradoresRota');
+        container.innerHTML = '';
+        const items = lista && lista.length > 0 ? lista : [{ empurradorId:'', composicao:[] }];
+        items.forEach(it => container.appendChild(buildEmpurradorBlock(it)));
+        lucide.createIcons();
+    }
+
+    function buildEmpurradorBlock(item) {
+        // Retrocompatibilidade: formato antigo tinha tipoBarcacaId diretamente
+        const composicao = item.composicao || (item.tipoBarcacaId ? [{ tipoBarcacaId: item.tipoBarcacaId, quantidade: item.qtdBarcacas || 1 }] : []);
+
+        const block = document.createElement('div');
+        block.className = 'empurrador-block border border-gray-200 rounded-lg p-3 space-y-2 bg-gray-50';
+
+        const opcEmp = empurradores.filter(e => e.ativo !== false).map(e =>
+            `<option value="${e.id}" ${e.id == item.empurradorId ? 'selected':''}>${e.nome} (${e.qtdBarcacas} barc.)</option>`
+        ).join('');
+
+        block.innerHTML = `
+            <div class="flex gap-2 items-center">
+                <select class="empurrador-select input-field flex-1" onchange="atualizarContadorBlock(this)">
+                    <option value="">Selecione o empurrador...</option>
+                    ${opcEmp}
+                </select>
+                <span class="barcacas-counter text-xs text-gray-500 whitespace-nowrap font-medium">0/? barc.</span>
+                <button type="button" onclick="this.closest('.empurrador-block').remove()" class="text-red-600 hover:text-red-800 shrink-0 p-1" title="Remover empurrador">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+            </div>
+            <div class="composicao-barcacas ml-1 space-y-1"></div>
+            <button type="button" class="text-xs text-blue-600 hover:text-blue-800 ml-1 flex items-center gap-1" onclick="addBarcacaComposicao(this)">
+                <i data-lucide="plus" class="w-3 h-3"></i> Adicionar tipo de barcaça ao comboio
+            </button>
+        `;
+
+        const composicaoContainer = block.querySelector('.composicao-barcacas');
+        const linhasIniciais = composicao.length > 0 ? composicao : [{ tipoBarcacaId: '', quantidade: 1 }];
+        linhasIniciais.forEach(c => composicaoContainer.appendChild(buildBarcacaRow(c)));
+
+        // Atualiza contador após render
+        setTimeout(() => atualizarContadorBlock(block), 0);
+        return block;
+    }
+
+    function buildBarcacaRow(item = {}) {
+        const div = document.createElement('div');
+        div.className = 'barcaca-row flex gap-2 items-center';
+        const opcBarcaca = barcacas.filter(b => b.ativo !== false).map(b =>
+            `<option value="${b.id}" ${b.id == item.tipoBarcacaId ? 'selected':''}>${b.nome} (cal. mín ${b.caladoMin}m)</option>`
+        ).join('');
+        div.innerHTML = `
+            <select class="tipobarcaca-select input-field flex-1" onchange="atualizarContadorBlock(this)">
+                <option value="">Tipo de barcaça...</option>
+                ${opcBarcaca}
+            </select>
+            <label class="text-xs text-gray-500 whitespace-nowrap">Qtd:</label>
+            <input type="number" class="qtd-barcaca input-field" style="width:5rem" min="1" value="${item.quantidade || 1}" oninput="atualizarContadorBlock(this)">
+            <button type="button" onclick="this.parentElement.remove(); atualizarContadorBlock(this)" class="text-red-500 hover:text-red-700 shrink-0 p-1" title="Remover">
+                <i data-lucide="minus-circle" class="w-4 h-4"></i>
+            </button>
+        `;
+        return div;
+    }
+
+    function addBarcacaComposicao(btn) {
+        const block = btn.closest('.empurrador-block');
+        const container = block.querySelector('.composicao-barcacas');
+        container.appendChild(buildBarcacaRow({ tipoBarcacaId:'', quantidade:1 }));
+        atualizarContadorBlock(block);
+        lucide.createIcons();
+    }
+
+    function atualizarContadorBlock(el) {
+        const block = el ? el.closest('.empurrador-block') : null;
+        if (!block) return;
+        const empSel = block.querySelector('.empurrador-select');
+        const empId  = empSel ? parseFloat(empSel.value) : NaN;
+        const emp    = isNaN(empId) ? null : empurradores.find(e => e.id === empId);
+        const max    = emp ? emp.qtdBarcacas : null;
+        const total  = [...block.querySelectorAll('.qtd-barcaca')].reduce((s,inp) => s + (parseInt(inp.value)||0), 0);
+        const counter = block.querySelector('.barcacas-counter');
+        if (counter) {
+            const over = max && total > max;
+            counter.textContent = `${total}/${max ?? '?'} barc.`;
+            counter.className   = `barcacas-counter text-xs whitespace-nowrap font-medium ${over ? 'text-red-600' : 'text-gray-500'}`;
+        }
+    }
+
+    function addEmpurradorRota() {
+        const container = document.getElementById('empurradoresRota');
+        container.appendChild(buildEmpurradorBlock({ empurradorId:'', composicao:[] }));
+        lucide.createIcons();
+    }
+
+    function saveRota() {
+        const id   = document.getElementById('rotaId').value;
+        const nome = document.getElementById('rotaNome').value.trim();
+        const rio  = document.getElementById('rotaRio').value;
+        const tempoViagemH    = parseFloat(document.getElementById('rotaTempoViagem').value)    || 0;
+        const tonHoraOrigem   = parseFloat(document.getElementById('rotaTonHoraOrigem').value)  || 0;
+        const tonHoraDestino  = parseFloat(document.getElementById('rotaTonHoraDestino').value) || 0;
+        const tempoEsperaH    = parseFloat(document.getElementById('rotaTempoEspera').value)    || 0;
+
+        if (!nome || !rio) { alert('Nome e rio são obrigatórios.'); return; }
+        if (tonHoraOrigem <= 0 || tonHoraDestino <= 0) { alert('Informe taxas de originação e elevação maiores que zero.'); return; }
+
+        const metas = MESES.map(m => {
+            const v = parseFloat(document.getElementById(`meta${m}`).value);
+            return isNaN(v) ? 0 : v;
+        });
+
+        const rotaEmps = [];
+        let erroComboio = null;
+
+        document.querySelectorAll('#empurradoresRota .empurrador-block').forEach(block => {
+            const empSel = block.querySelector('.empurrador-select');
+            if (!empSel || !empSel.value) return;
+
+            const empId = parseFloat(empSel.value);
+            const emp   = empurradores.find(e => e.id === empId);
+            const composicao = [];
+
+            block.querySelectorAll('.barcaca-row').forEach(row => {
+                const tipoSel = row.querySelector('.tipobarcaca-select');
+                const qtdInp  = row.querySelector('.qtd-barcaca');
+                if (!tipoSel || !tipoSel.value) return;
+                composicao.push({
+                    tipoBarcacaId: parseFloat(tipoSel.value),
+                    quantidade:    Math.max(1, parseInt(qtdInp?.value) || 1)
+                });
+            });
+
+            const totalBarcacas = composicao.reduce((s,c) => s + c.quantidade, 0);
+            if (emp && totalBarcacas > emp.qtdBarcacas) {
+                erroComboio = `Empurrador "${emp.nome}" suporta ${emp.qtdBarcacas} barcaças, mas o comboio configurado tem ${totalBarcacas}.`;
+            }
+
+            rotaEmps.push({ empurradorId: empId, composicao });
+        });
+
+        if (rotaEmps.length === 0) { alert('Adicione pelo menos um empurrador à rota.'); return; }
+        if (erroComboio) { alert(erroComboio); return; }
+
+        const rota = {
+            id: id ? parseFloat(id) : Date.now() + Math.random(),
+            nome, rio,
+            tempoViagemH, tonHoraOrigem, tonHoraDestino, tempoEsperaH,
+            metas,
+            empurradores: rotaEmps
+        };
+
+        if (id) {
+            const i = rotas.findIndex(r => r.id == id);
+            rotas[i] = rota;
+        } else { rotas.push(rota); }
+
+        saveToLocalStorage();
+        renderTabelaRotas();
+        closeModal('rota');
+    }
+
+    function deleteRota(id) {
+        if (!confirm('Excluir esta rota?')) return;
+        rotas = rotas.filter(r => r.id !== id);
+        saveToLocalStorage();
+        renderTabelaRotas();
+    }
+
+    function renderTabelaRotas() {
+        const tbody = document.getElementById('tbodyRotas');
+        tbody.innerHTML = '';
+        if (rotas.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-gray-400 py-4">Nenhuma rota cadastrada</td></tr>';
+            return;
+        }
+        rotas.forEach(r => {
+            const metaAnual = (r.metas||[]).reduce((a,b)=>a+b,0);
+            const frota = (r.empurradores||[]).map(it => {
+                const e = empurradores.find(x => x.id === it.empurradorId);
+                const nomeEmp = e ? e.nome : '?';
+                const comp = (it.composicao||[]).map(c => {
+                    const b = barcacas.find(x => x.id === c.tipoBarcacaId);
+                    return `${c.quantidade}× ${b ? b.nome : '?'}`;
+                }).join(', ');
+                return `${nomeEmp}${comp ? ': ' + comp : ''}`;
+            }).join('<br>');
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="font-medium">${r.nome}</td>
+                <td>${r.rio}</td>
+                <td>${(r.tempoViagemH||0).toFixed(1)} h</td>
+                <td>${(r.tonHoraOrigem||0).toLocaleString('pt-BR')}</td>
+                <td>${(r.tonHoraDestino||0).toLocaleString('pt-BR')}</td>
+                <td>${metaAnual.toLocaleString('pt-BR')}</td>
+                <td class="text-xs">${frota || '-'}</td>
+                <td class="flex gap-2">
+                    <button onclick="openModal('rota', ${r.id})" class="text-blue-600 hover:text-blue-800"><i data-lucide="edit" class="w-4 h-4"></i></button>
+                    <button onclick="deleteRota(${r.id})" class="text-red-600 hover:text-red-800"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                </td>`;
+            tbody.appendChild(tr);
+        });
+        lucide.createIcons();
+    }
+
+    // ==========================================================================
+    // MÓDULO 4: DASHBOARD / CÁLCULOS DE CAPACIDADE
+    // ==========================================================================
+
+    // ==========================================================================
+    // CENÁRIOS CUSTOMIZADOS
+    // ==========================================================================
+
+    function openCenarioCustomModal(id = null) {
+        document.getElementById('tituloCenarioCustom').textContent = id ? 'Editar Cenário' : 'Novo Cenário';
+        document.getElementById('cenarioCustomId').value = id || '';
+
+        // Monta grid de meses para tipo=manual
+        const grid = document.getElementById('manuaisGrid');
+        grid.innerHTML = MESES.map((m, i) => `
+            <div>
+                <label class="text-xs text-gray-500">${m}</label>
+                <input type="number" id="cenManual${i}" class="input-field text-sm" step="0.01" placeholder="m">
+            </div>`).join('');
+
+        if (id) {
+            const c = (variaveis.cenariosCustom || []).find(x => x.id === id);
+            if (!c) return;
+            document.getElementById('cenNome').value = c.nome;
+            document.getElementById('cenCor').value  = c.cor || '#9333ea';
+            document.getElementById('cenTipo').value = c.tipo || 'desvio';
+            document.getElementById('cenMultiplicadorStd').value = c.multiplicadorStd ?? -2;
+            document.getElementById('cenPercentual').value       = c.percentual ?? -30;
+            document.getElementById('cenAbaco').value = c.abaco ?? '';
+            document.getElementById('cenFaq').value   = c.faq   ?? '';
+            (c.niveisManuais || []).forEach((v, i) => {
+                const inp = document.getElementById(`cenManual${i}`);
+                if (inp) inp.value = v ?? '';
+            });
+        } else {
+            document.getElementById('cenNome').value = '';
+            document.getElementById('cenCor').value  = '#9333ea';
+            document.getElementById('cenTipo').value = 'desvio';
+            document.getElementById('cenMultiplicadorStd').value = -2;
+            document.getElementById('cenPercentual').value = -30;
+            document.getElementById('cenAbaco').value = '';
+            document.getElementById('cenFaq').value   = '';
+        }
+        updateCenarioTipoUI();
+        document.getElementById('modalCenarioCustom').classList.add('active');
+    }
+
+    function updateCenarioTipoUI() {
+        const tipo = document.getElementById('cenTipo').value;
+        document.getElementById('paramDesvio').classList.toggle('hidden',    tipo !== 'desvio');
+        document.getElementById('paramPercentual').classList.toggle('hidden', tipo !== 'percentual');
+        document.getElementById('paramManual').classList.toggle('hidden',     tipo !== 'manual');
+    }
+
+    function saveCenarioCustom() {
+        const id   = document.getElementById('cenarioCustomId').value;
+        const nome = document.getElementById('cenNome').value.trim();
+        const cor  = document.getElementById('cenCor').value;
+        const tipo = document.getElementById('cenTipo').value;
+
+        if (!nome) { alert('Informe um nome para o cenário.'); return; }
+
+        const c = {
+            id:   id ? parseFloat(id) : Date.now() + Math.random(),
+            nome, cor, tipo,
+            multiplicadorStd: numOrNull(document.getElementById('cenMultiplicadorStd').value),
+            percentual:       numOrNull(document.getElementById('cenPercentual').value),
+            niveisManuais: MESES.map((_, i) => numOrNull(document.getElementById(`cenManual${i}`)?.value)),
+            abaco: numOrNull(document.getElementById('cenAbaco').value),
+            faq:   numOrNull(document.getElementById('cenFaq').value)
+        };
+
+        if (!variaveis.cenariosCustom) variaveis.cenariosCustom = [];
+        if (id) {
+            const idx = variaveis.cenariosCustom.findIndex(x => x.id == id);
+            variaveis.cenariosCustom[idx] = c;
+        } else {
+            variaveis.cenariosCustom.push(c);
+        }
+
+        saveToLocalStorage();
+        renderListaCenariosCustom();
+        closeModal('cenarioCustom');
+        updateRioChart();
+        if (!document.getElementById('content-dashboard').classList.contains('hidden')) updateDashboard();
+    }
+
+    function deleteCenarioCustom(id) {
+        if (!confirm('Excluir este cenário?')) return;
+        variaveis.cenariosCustom = (variaveis.cenariosCustom || []).filter(c => c.id !== id);
+        saveToLocalStorage();
+        renderListaCenariosCustom();
+        updateRioChart();
+        if (!document.getElementById('content-dashboard').classList.contains('hidden')) updateDashboard();
+    }
+
+    function renderListaCenariosCustom() {
+        const container = document.getElementById('listaCenariosCustom');
+        const vazio     = document.getElementById('semCenariosCustom');
+        if (!container) return;
+        const lista = variaveis.cenariosCustom || [];
+        container.innerHTML = '';
+        lista.forEach(c => {
+            const tipoLabel = c.tipo === 'desvio'
+                ? `${c.multiplicadorStd >= 0 ? '+' : ''}${c.multiplicadorStd}σ`
+                : c.tipo === 'percentual'
+                    ? `${c.percentual >= 0 ? '+' : ''}${c.percentual}%`
+                    : 'manual';
+            const div = document.createElement('div');
+            div.className = 'flex items-center justify-between p-2 rounded-lg border border-gray-200 bg-gray-50';
+            div.innerHTML = `
+                <div class="flex items-center gap-2">
+                    <span class="w-4 h-4 rounded-full shrink-0" style="background:${c.cor}"></span>
+                    <span class="font-medium text-sm">${c.nome}</span>
+                    <span class="badge badge-info text-xs">${tipoLabel}</span>
+                    ${c.abaco !== null ? `<span class="text-xs text-gray-400">Áb. ${c.abaco}</span>` : ''}
+                    ${c.faq   !== null ? `<span class="text-xs text-gray-400">FAQ ${c.faq}</span>`   : ''}
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="openCenarioCustomModal(${c.id})" class="text-blue-600 hover:text-blue-800"><i data-lucide="edit" class="w-4 h-4"></i></button>
+                    <button onclick="deleteCenarioCustom(${c.id})" class="text-red-600 hover:text-red-800"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                </div>`;
+            container.appendChild(div);
+        });
+        if (vazio) vazio.classList.toggle('hidden', lista.length > 0);
+        lucide.createIcons();
+    }
+
+    // Nível projetado para um cenário customizado num mês específico
+    function projetarNivelCenarioCustom(cenConf, mes, base, std, ajuste) {
+        const medio = Math.max(0, base + ajuste);
+        if (cenConf.tipo === 'desvio') {
+            return Math.max(0, medio + (cenConf.multiplicadorStd ?? 0) * std);
+        } else if (cenConf.tipo === 'percentual') {
+            return Math.max(0, medio * (1 + (cenConf.percentual ?? 0) / 100));
+        } else if (cenConf.tipo === 'manual') {
+            const v = cenConf.niveisManuais?.[mes];
+            return (v !== null && v !== undefined && !isNaN(v)) ? Math.max(0, v) : medio;
+        }
+        return medio;
+    }
+
+    function getVariaveisCenario(cenario) {
+        // cenario pode ser 'otimista'|'medio'|'pessimista' (base) ou ID numérico (custom)
+        const isBase = ['otimista', 'medio', 'pessimista'].includes(cenario);
+        if (!isBase) {
+            const cen = (variaveis.cenariosCustom || []).find(c => c.id === cenario);
+            if (cen) return {
+                abaco: cen.abaco ?? variaveis.abaco,
+                faq:   cen.faq   ?? variaveis.faq
+            };
+        }
+        const over = (variaveis.cenarios && variaveis.cenarios[cenario]) || {};
+        return {
+            abaco: over.abaco ?? variaveis.abaco,
+            faq:   over.faq   ?? variaveis.faq
+        };
+    }
+
+    function calcularVolumeBarcaca(barcaca, caladoPossivel) {
+        if (!barcaca) return 0;
+        if (caladoPossivel < barcaca.caladoMin) return 0;
+        if (!barcaca.caladoMax || !barcaca.volMax || barcaca.caladoMax <= barcaca.caladoMin) return barcaca.volMin;
+        const cal = Math.min(caladoPossivel, barcaca.caladoMax);
+        const razao = (cal - barcaca.caladoMin) / (barcaca.caladoMax - barcaca.caladoMin);
+        return barcaca.volMin + razao * (barcaca.volMax - barcaca.volMin);
+    }
+
+    function diasDoMes(ano, mes) {
+        return new Date(ano, mes+1, 0).getDate();
+    }
+
+    // Calcula viagens possíveis de UM empurrador (com composição multi-barcaça) no mês
+    function calcularViagensEmpurrador(rota, empItem, mes, ano, nivelRio, cenario) {
+        const emp = empurradores.find(e => e.id === empItem.empurradorId);
+        if (!emp || emp.ativo === false) return null;
+
+        const v = getVariaveisCenario(cenario);
+        const caladoOp = nivelRio + v.abaco - v.faq;
+
+        if (caladoOp < emp.caladoMin) return {
+            emp, caladoOp, composicaoDetalhada:[],
+            motivo:`Calado op. (${caladoOp.toFixed(2)} m) < mín. do empurrador (${emp.caladoMin.toFixed(2)} m)`,
+            viagens:0, volumeTotal:0
+        };
+
+        const composicao = empItem.composicao || [];
+        if (composicao.length === 0) return {
+            emp, caladoOp, composicaoDetalhada:[],
+            motivo:'Nenhum tipo de barcaça configurado no comboio',
+            viagens:0, volumeTotal:0
+        };
+
+        const composicaoDetalhada = composicao.map(c => {
+            const tipo    = barcacas.find(b => b.id === c.tipoBarcacaId);
+            const inativa = tipo && tipo.ativo === false;
+            const navega  = tipo && !inativa && caladoOp >= tipo.caladoMin;
+            // Calado real da barcaça: limitado pelo seu próprio máximo estrutural
+            const caladoAdotado = navega
+                ? Math.min(Math.floor(caladoOp * 10) / 10, parseFloat(tipo.caladoMax))
+                : 0;
+            const volUnit = navega ? calcularVolumeBarcaca(tipo, caladoAdotado) : 0;
+            return { tipo, quantidade: c.quantidade, navega, inativa, caladoAdotado, volUnit, volSubtotal: volUnit * c.quantidade };
+        });
+
+        const volComboio = composicaoDetalhada.reduce((s,c) => s + c.volSubtotal, 0);
+        if (volComboio <= 0) return {
+            emp, caladoOp, composicaoDetalhada,
+            motivo:'Nenhuma barcaça navega com o nível do rio previsto',
+            viagens:0, volumeTotal:0
+        };
+
+        const hCarga    = volComboio / (rota.tonHoraOrigem  || 1);
+        const hDescarga = volComboio / (rota.tonHoraDestino || 1);
+        const cicloH    = hCarga + (rota.tempoViagemH || 0) + hDescarga + (rota.tempoEsperaH || 0);
+        if (cicloH <= 0) return { emp, caladoOp, composicaoDetalhada, motivo:'Ciclo inviável', viagens:0, volumeTotal:0 };
+
+        const dias    = diasDoMes(ano, mes);
+        const viagens = (24 * dias) / cicloH;
+
+        return {
+            emp, caladoOp, composicaoDetalhada,
+            ciclo: { volComboio, hCarga, hDescarga, cicloH },
+            viagens,
+            volumePorViagem: volComboio,
+            volumeTotal: viagens * volComboio
+        };
+    }
+
+    function calcularCapacidadeRotaMes(rota, mes, ano, nivelRio, cenario) {
+        let total = 0;
+        const detalhes = [];
+        (rota.empurradores||[]).forEach(it => {
+            const r = calcularViagensEmpurrador(rota, it, mes, ano, nivelRio, cenario);
+            if (r) { total += r.volumeTotal; detalhes.push(r); }
+        });
+        return { total, detalhes };
+    }
+
+    function setDashView(mode) {
+        dashViewMode = mode;
+        const btnRota = document.getElementById('btnViewRota');
+        const btnMes  = document.getElementById('btnViewMes');
+        if (btnRota) {
+            btnRota.className = `text-xs px-3 py-1.5 font-medium transition-colors ${mode==='rota' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`;
+            btnMes.className  = `text-xs px-3 py-1.5 font-medium transition-colors ${mode==='mes'  ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`;
+        }
+        updateDashboard();
+    }
+
+    function updateDashboard() {
+        const tbody = document.getElementById('tbodyDashboard');
+        tbody.innerHTML = '';
+
+        // Sincroniza dropdown de rotas
+        const filtroEl = document.getElementById('dashFiltroRota');
+        const prevFiltro = filtroEl ? filtroEl.value : '';
+        if (filtroEl) {
+            filtroEl.innerHTML = '<option value="">Todas as rotas</option>' +
+                rotas.map(r => `<option value="${r.id}">${r.nome}</option>`).join('');
+            if ([...filtroEl.options].some(o => o.value === prevFiltro)) filtroEl.value = prevFiltro;
+        }
+        const filtroRotaId = filtroEl && filtroEl.value ? parseFloat(filtroEl.value) : null;
+        const rotasFiltradas = filtroRotaId ? rotas.filter(r => r.id === filtroRotaId) : rotas;
+
+        if (rotasFiltradas.length === 0 || dadosRios.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-gray-500 py-6">Cadastre rotas e importe dados de rio para visualizar o dashboard</td></tr>';
+            document.getElementById('resumoOtimista').textContent = '-';
+            document.getElementById('resumoMedio').textContent = '-';
+            document.getElementById('resumoPessimista').textContent = '-';
+            document.getElementById('resumoMeta').textContent = '-';
+            renderAlertas([]);
+            renderChartDashboard({labels:[],metas:[],otimista:[],medio:[],pessimista:[]});
+            return;
+        }
+
+        const ano = new Date().getFullYear();
+        const mesAtual = new Date().getMonth();
+        let totOt=0, totMe=0, totPe=0, totMeta=0;
+        const alertas = [];
+        const chartData = { labels:[], metas:[], otimista:[], medio:[], pessimista:[] };
+
+        if (dashViewMode === 'mes') {
+            // ── Visão Por Mês: agrega capacidade de todas as rotas filtradas por mês ──
+            const thead = document.querySelector('#tabelaDashboard thead tr');
+            if (thead) thead.innerHTML = `
+                <th>Mês</th><th>Meta Total (t)</th>
+                <th class="scenario-optimistic">Cap. Otimista</th>
+                <th class="scenario-medium">Cap. Média</th>
+                <th class="scenario-pessimistic">Cap. Pessimista</th>
+                <th>Déficit (pessim.)</th><th>Status</th>`;
+            const titleEl = document.getElementById('dashChartTitle');
+            if (titleEl) titleEl.textContent = filtroRotaId
+                ? `${rotasFiltradas[0]?.nome} — Capacidade Mensal`
+                : 'Capacidade Total da Frota por Mês';
+
+            const mesMapa = {};
+            rotasFiltradas.forEach(rota => {
+                const projMap = getProjecaoPorMes(rota.rio);
+                if (!projMap) return;
+                for (let mes = mesAtual; mes < 12; mes++) {
+                    const p = projMap[mes];
+                    if (!p) continue;
+                    const meta  = (rota.metas||[])[mes] || 0;
+                    const capOt = calcularCapacidadeRotaMes(rota, mes, ano, p.otimista,   'otimista');
+                    const capMe = calcularCapacidadeRotaMes(rota, mes, ano, p.medio,      'medio');
+                    const capPe = calcularCapacidadeRotaMes(rota, mes, ano, p.pessimista, 'pessimista');
+                    if (!mesMapa[mes]) mesMapa[mes] = { ot:0, me:0, pe:0, meta:0, rotasData:[] };
+                    mesMapa[mes].ot   += capOt.total;
+                    mesMapa[mes].me   += capMe.total;
+                    mesMapa[mes].pe   += capPe.total;
+                    mesMapa[mes].meta += meta;
+                    mesMapa[mes].rotasData.push({ rota, mes, p, capOt, capMe, capPe, meta });
+                    totOt += capOt.total; totMe += capMe.total; totPe += capPe.total; totMeta += meta;
+                }
+            });
+
+            for (let mes = mesAtual; mes < 12; mes++) {
+                const d = mesMapa[mes];
+                if (!d) continue;
+                const deficitPe = Math.max(0, d.meta - d.pe);
+                const deficitMe = Math.max(0, d.meta - d.me);
+                const { status, bc } = statusBadge(deficitPe, d.me, d.meta);
+                const rotaNome = filtroRotaId ? rotasFiltradas[0].nome : 'Total frota';
+                if (deficitPe > 0) alertas.push({ cen: 'pessimista', rota: rotaNome, mes: MESES_FULL[mes], deficit: deficitPe, cap: d.pe, meta: d.meta });
+                if (deficitMe > 0) alertas.push({ cen: 'medio', rota: rotaNome, mes: MESES_FULL[mes], deficit: deficitMe, cap: d.me, meta: d.meta });
+
+                const tr = document.createElement('tr');
+                tr.className = 'cursor-pointer';
+                tr.onclick = () => abrirDetalheMes(mes, ano, d.rotasData);
+                tr.innerHTML = `
+                    <td class="font-medium">${MESES_FULL[mes]}</td>
+                    <td>${d.meta.toLocaleString('pt-BR')}</td>
+                    <td class="scenario-optimistic font-medium">${Math.round(d.ot).toLocaleString('pt-BR')}</td>
+                    <td class="scenario-medium font-medium">${Math.round(d.me).toLocaleString('pt-BR')}</td>
+                    <td class="scenario-pessimistic font-medium">${Math.round(d.pe).toLocaleString('pt-BR')}</td>
+                    <td class="${deficitPe>0?'text-red-600 font-bold':'text-green-600'}">${Math.round(deficitPe).toLocaleString('pt-BR')}</td>
+                    <td><span class="badge ${bc}">${status}</span></td>`;
+                tbody.appendChild(tr);
+
+                chartData.labels.push(MESES[mes]);
+                chartData.metas.push(d.meta);
+                chartData.otimista.push(d.ot);
+                chartData.medio.push(d.me);
+                chartData.pessimista.push(d.pe);
+            }
+
+        } else {
+            // ── Visão Por Rota: uma linha por rota × mês ──
+            const thead = document.querySelector('#tabelaDashboard thead tr');
+            if (thead) thead.innerHTML = `
+                <th>Rota</th><th>Mês</th><th>Meta (t)</th>
+                <th class="scenario-optimistic">Cap. Otimista</th>
+                <th class="scenario-medium">Cap. Média</th>
+                <th class="scenario-pessimistic">Cap. Pessimista</th>
+                <th>Déficit (pessim.)</th><th>Status</th>`;
+            const titleEl = document.getElementById('dashChartTitle');
+            if (titleEl) titleEl.textContent = filtroRotaId
+                ? `${rotasFiltradas[0]?.nome} — Capacidade vs Budget`
+                : 'Capacidade vs Budget por Rota';
+
+            rotasFiltradas.forEach(rota => {
+                const projMap = getProjecaoPorMes(rota.rio);
+                if (!projMap) return;
+                for (let mes = mesAtual; mes < 12; mes++) {
+                    const p = projMap[mes];
+                    if (!p) continue;
+                    const meta  = (rota.metas||[])[mes] || 0;
+                    const capOt = calcularCapacidadeRotaMes(rota, mes, ano, p.otimista,   'otimista');
+                    const capMe = calcularCapacidadeRotaMes(rota, mes, ano, p.medio,      'medio');
+                    const capPe = calcularCapacidadeRotaMes(rota, mes, ano, p.pessimista, 'pessimista');
+                    totOt += capOt.total; totMe += capMe.total; totPe += capPe.total; totMeta += meta;
+                    const deficitPe = Math.max(0, meta - capPe.total);
+                    const deficitMe = Math.max(0, meta - capMe.total);
+                    const { status, bc } = statusBadge(deficitPe, capMe.total, meta);
+                    if (deficitPe > 0) alertas.push({ cen: 'pessimista', rota: rota.nome, mes: MESES_FULL[mes], deficit: deficitPe, cap: capPe.total, meta });
+                    if (deficitMe > 0) alertas.push({ cen: 'medio', rota: rota.nome, mes: MESES_FULL[mes], deficit: deficitMe, cap: capMe.total, meta });
+
+                    const tr = document.createElement('tr');
+                    tr.className = 'cursor-pointer';
+                    tr.onclick = () => abrirDetalhe(rota, mes, ano, p, capOt, capMe, capPe);
+                    tr.innerHTML = `
+                        <td class="font-medium">${rota.nome}</td>
+                        <td>${MESES_FULL[mes]}</td>
+                        <td>${meta.toLocaleString('pt-BR')}</td>
+                        <td class="scenario-optimistic font-medium">${Math.round(capOt.total).toLocaleString('pt-BR')}</td>
+                        <td class="scenario-medium font-medium">${Math.round(capMe.total).toLocaleString('pt-BR')}</td>
+                        <td class="scenario-pessimistic font-medium">${Math.round(capPe.total).toLocaleString('pt-BR')}</td>
+                        <td class="${deficitPe>0?'text-red-600 font-bold':'text-green-600'}">${Math.round(deficitPe).toLocaleString('pt-BR')}</td>
+                        <td><span class="badge ${bc}">${status}</span></td>`;
+                    tbody.appendChild(tr);
+
+                    chartData.labels.push(filtroRotaId ? MESES[mes] : `${rota.nome.substring(0,12)} ${MESES[mes]}`);
+                    chartData.metas.push(meta);
+                    chartData.otimista.push(capOt.total);
+                    chartData.medio.push(capMe.total);
+                    chartData.pessimista.push(capPe.total);
+                }
+            });
+        }
+
+        document.getElementById('resumoOtimista').textContent   = Math.round(totOt).toLocaleString('pt-BR') + ' t';
+        document.getElementById('resumoMedio').textContent      = Math.round(totMe).toLocaleString('pt-BR') + ' t';
+        document.getElementById('resumoPessimista').textContent = Math.round(totPe).toLocaleString('pt-BR') + ' t';
+        document.getElementById('resumoMeta').textContent       = Math.round(totMeta).toLocaleString('pt-BR') + ' t';
+
+        renderAlertas(alertas);
+        renderChartDashboard(chartData);
+        renderCenariosCustomDashboard(ano, mesAtual);
+    }
+
+    function abrirDetalheMes(mes, ano, rotasData) {
+        document.getElementById('tituloDetalhe').textContent = `Frota Total — ${MESES_FULL[mes]}/${ano}`;
+        const body = document.getElementById('detalheBody');
+
+        // Guarda dados no cache para os onclicks das linhas acessarem por índice
+        _detalhesMesCache = rotasData;
+
+        const totOt   = rotasData.reduce((s,d) => s + d.capOt.total, 0);
+        const totMe   = rotasData.reduce((s,d) => s + d.capMe.total, 0);
+        const totPe   = rotasData.reduce((s,d) => s + d.capPe.total, 0);
+        const totMeta = rotasData.reduce((s,d) => s + d.meta, 0);
+
+        const rows = rotasData.map((d, idx) => {
+            const deficit = Math.max(0, d.meta - d.capPe.total);
+            const { status, bc } = statusBadge(deficit, d.capMe.total, d.meta);
+            return `<tr class="cursor-pointer" onclick="abrirDetalheDoMesCache(${idx},${ano})">
+                <td class="font-medium">${d.rota.nome}</td>
+                <td>${d.meta.toLocaleString('pt-BR')}</td>
+                <td class="scenario-optimistic font-medium">${Math.round(d.capOt.total).toLocaleString('pt-BR')}</td>
+                <td class="scenario-medium font-medium">${Math.round(d.capMe.total).toLocaleString('pt-BR')}</td>
+                <td class="scenario-pessimistic font-medium">${Math.round(d.capPe.total).toLocaleString('pt-BR')}</td>
+                <td class="${deficit>0?'text-red-600 font-bold':'text-green-600'}">${Math.round(deficit).toLocaleString('pt-BR')}</td>
+                <td><span class="badge ${bc}">${status}</span></td>
+            </tr>`;
+        }).join('');
+
+        body.innerHTML = `
+            <p class="text-xs text-gray-500 mb-3">Clique em uma rota para ver o detalhamento de viagens.</p>
+            <div class="table-container">
+                <table>
+                    <thead><tr>
+                        <th>Rota</th><th>Meta (t)</th>
+                        <th class="scenario-optimistic">Cap. Otimista</th>
+                        <th class="scenario-medium">Cap. Média</th>
+                        <th class="scenario-pessimistic">Cap. Pessimista</th>
+                        <th>Déficit</th><th>Status</th>
+                    </tr></thead>
+                    <tbody>
+                        ${rows}
+                        <tr class="font-bold bg-gray-50 border-t-2 border-gray-300">
+                            <td>TOTAL</td>
+                            <td>${totMeta.toLocaleString('pt-BR')}</td>
+                            <td class="scenario-optimistic">${Math.round(totOt).toLocaleString('pt-BR')}</td>
+                            <td class="scenario-medium">${Math.round(totMe).toLocaleString('pt-BR')}</td>
+                            <td class="scenario-pessimistic">${Math.round(totPe).toLocaleString('pt-BR')}</td>
+                            <td></td><td></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>`;
+
+        document.getElementById('modalDetalhe').classList.add('active');
+    }
+
+    function abrirDetalheDoMesCache(idx, ano) {
+        const d = _detalhesMesCache[idx];
+        if (!d) return;
+        closeModal('detalhe');
+        abrirDetalhe(d.rota, d.mes, ano, d.p, d.capOt, d.capMe, d.capPe);
+    }
+
+    function toggleDashCenario(id) {
+        dashCenariosVisiveis[id] = !(id in dashCenariosVisiveis ? dashCenariosVisiveis[id] : true);
+        renderCenariosCustomDashboard(new Date().getFullYear(), new Date().getMonth());
+    }
+
+    function renderCenariosCustomDashboard(ano, mesAtual) {
+        const container = document.getElementById('cenariosCustomDashboard');
+        if (!container) return;
+        const lista = variaveis.cenariosCustom || [];
+        if (lista.length === 0 || rotas.length === 0 || dadosRios.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+
+        const pills = lista.map(c => {
+            const visivel = !(c.id in dashCenariosVisiveis) || dashCenariosVisiveis[c.id];
+            const cls = visivel
+                ? 'text-xs px-3 py-1.5 rounded-full border font-medium cursor-pointer transition-all text-white'
+                : 'text-xs px-3 py-1.5 rounded-full border font-medium cursor-pointer transition-all bg-gray-100 border-gray-300 text-gray-400';
+            const style = visivel ? `background:${c.cor};border-color:${c.cor}` : '';
+            return `<button class="${cls}" style="${style}" onclick="toggleDashCenario('${c.id}')">${c.nome}</button>`;
+        }).join('');
+
+        const listaVisiveis = lista.filter(c => !(c.id in dashCenariosVisiveis) || dashCenariosVisiveis[c.id]);
+
+        const header = `
+            <div class="card p-4 mb-4">
+                <div class="flex items-center gap-3 flex-wrap">
+                    <span class="text-sm font-medium text-gray-600">Cenários personalizados:</span>
+                    ${pills}
+                </div>
+            </div>`;
+
+        if (listaVisiveis.length === 0) {
+            container.innerHTML = header;
+            return;
+        }
+
+        container.innerHTML = header + listaVisiveis.map(cenConf => {
+            let totalCap = 0;
+            const rows = [];
+
+            rotas.forEach(rota => {
+                const projMap = getProjecaoPorMes(rota.rio);
+                if (!projMap) return;
+                for (let mes = mesAtual; mes < 12; mes++) {
+                    const p = projMap[mes];
+                    if (!p) continue;
+                    const nivel = p.custom[cenConf.id] ?? p.medio;
+                    const cap   = calcularCapacidadeRotaMes(rota, mes, ano, nivel, cenConf.id);
+                    const meta  = (rota.metas||[])[mes] || 0;
+                    totalCap   += cap.total;
+                    const deficit = Math.max(0, meta - cap.total);
+                    const badgeClass = deficit > 0 ? 'badge-danger' : 'badge-success';
+                    rows.push(`
+                        <tr>
+                            <td class="font-medium">${rota.nome}</td>
+                            <td>${MESES_FULL[mes]}</td>
+                            <td>${meta.toLocaleString('pt-BR')}</td>
+                            <td class="font-medium">${Math.round(cap.total).toLocaleString('pt-BR')}</td>
+                            <td class="${deficit>0?'text-red-600 font-bold':'text-green-600'}">${Math.round(deficit).toLocaleString('pt-BR')}</td>
+                            <td><span class="badge ${badgeClass}">${deficit>0?'DÉFICIT':'OK'}</span></td>
+                        </tr>`);
+                }
+            });
+
+            const tipoDesc = cenConf.tipo === 'desvio'
+                ? `${cenConf.multiplicadorStd >= 0 ? '+' : ''}${cenConf.multiplicadorStd}σ sobre a média histórica`
+                : cenConf.tipo === 'percentual'
+                    ? `${cenConf.percentual >= 0 ? '+' : ''}${cenConf.percentual}% sobre a projeção base`
+                    : 'nível fixo manual';
+
+            return `
+                <div class="card p-6 mb-4">
+                    <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
+                        <h3 class="text-base font-semibold flex items-center gap-2">
+                            <span class="w-4 h-4 rounded-full shrink-0" style="background:${cenConf.cor}"></span>
+                            ${cenConf.nome}
+                            <span class="text-xs font-normal text-gray-500">(${tipoDesc})</span>
+                        </h3>
+                        <span class="text-sm font-medium text-gray-700">Total: <b>${Math.round(totalCap).toLocaleString('pt-BR')} t</b></span>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead><tr>
+                                <th>Rota</th><th>Mês</th><th>Meta (t)</th><th>Capacidade (t)</th><th>Déficit</th><th>Status</th>
+                            </tr></thead>
+                            <tbody>${rows.join('') || '<tr><td colspan="6" class="text-gray-400 text-center py-3">Sem dados</td></tr>'}</tbody>
+                        </table>
+                    </div>
+                </div>`;
+        }).join('');
+    }
+
+    function abrirDetalhe(rota, mes, ano, p, capOt, capMe, capPe) {
+        document.getElementById('tituloDetalhe').textContent = `${rota.nome} — ${MESES_FULL[mes]}/${ano}`;
+        const body = document.getElementById('detalheBody');
+
+        const cenarios = [
+            { nome:'Otimista',   classe:'text-green-600 border-green-500', nivel:p.otimista,   cap:capOt, cen:'otimista'   },
+            { nome:'Médio',      classe:'text-blue-600 border-blue-500',   nivel:p.medio,      cap:capMe, cen:'medio'      },
+            { nome:'Pessimista', classe:'text-red-600 border-red-500',     nivel:p.pessimista, cap:capPe, cen:'pessimista' }
+        ];
+
+        body.innerHTML = cenarios.map(c => {
+            const v = getVariaveisCenario(c.cen);
+            const caladoOp = c.nivel + v.abaco - v.faq;
+
+            const empRows = c.cap.detalhes.map(d => {
+                if (d.viagens < 0.001) {
+                    return `
+                        <tr class="bg-red-50">
+                            <td class="font-medium">${d.emp?.nome || '-'}</td>
+                            <td colspan="4" class="text-red-600 text-xs">${d.motivo || 'Inviável'}</td>
+                        </tr>`;
+                }
+
+                const compRows = (d.composicaoDetalhada || []).map(comp => {
+                    return `
+                    <tr class="text-xs bg-gray-50">
+                        <td class="pl-4 text-gray-500">
+                            ↳ ${comp.tipo?.nome || '?'}
+                            ${comp.tipo ? `<span class="text-gray-400 ml-1">mín. ${comp.tipo.caladoMin.toFixed(2)} m</span>` : ''}
+                            ${comp.navega ? `<span class="text-blue-500 ml-1">→ adotado ${comp.caladoAdotado.toFixed(2)} m</span>` : ''}
+                        </td>
+                        <td class="text-center">${comp.quantidade}</td>
+                        <td>${comp.inativa
+                            ? '<span class="text-gray-400">Inativa</span>'
+                            : comp.navega
+                                ? `${Math.round(comp.volUnit).toLocaleString('pt-BR')} t/barc.`
+                                : '<span class="text-red-500">Não navega</span>'}</td>
+                        <td class="font-medium">${comp.navega ? Math.round(comp.volSubtotal).toLocaleString('pt-BR') + ' t' : '-'}</td>
+                    </tr>`;
+                }).join('');
+
+                const viagensLabel = Number.isInteger(Math.round(d.viagens * 100) / 100)
+                    ? d.viagens.toFixed(0)
+                    : d.viagens.toFixed(2);
+
+                return `
+                    <tr class="font-medium bg-white">
+                        <td>
+                            ${d.emp.nome}
+                            <span class="text-xs font-normal text-gray-400 ml-1">cal. mín. ${d.emp.caladoMin.toFixed(2)} m</span>
+                        </td>
+                        <td class="text-center">${viagensLabel}
+                            <span class="text-xs font-normal text-gray-400 ml-1">(${d.ciclo.cicloH.toFixed(1)} h/ciclo)</span>
+                        </td>
+                        <td class="font-bold">${Math.round(d.volumePorViagem).toLocaleString('pt-BR')} t</td>
+                        <td class="font-bold text-green-700">${Math.round(d.volumeTotal).toLocaleString('pt-BR')} t</td>
+                    </tr>
+                    ${compRows}`;
+            }).join('');
+
+            return `
+                <div class="border-l-4 ${c.classe} pl-3 py-2 rounded-r">
+                    <div class="flex justify-between items-center mb-2 flex-wrap gap-1">
+                        <h4 class="font-semibold ${c.classe.split(' ')[0]}">${c.nome}</h4>
+                        <div class="text-xs text-gray-600">
+                            Nível rio: <b>${c.nivel.toFixed(2)} m</b>
+                            · Calado op.: <b>${caladoOp.toFixed(2)} m</b>
+                            <span class="text-gray-400">(rio + ${v.abaco} − ${v.faq})</span>
+                            · Total: <b>${Math.round(c.cap.total).toLocaleString('pt-BR')} t</b>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Empurrador / Composição</th>
+                                    <th>Viagens no mês</th>
+                                    <th>Vol/viagem</th>
+                                    <th>Vol total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${empRows || '<tr><td colspan="4" class="text-gray-400 py-2">Sem empurradores alocados</td></tr>'}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>`;
+        }).join('');
+
+        document.getElementById('modalDetalhe').classList.add('active');
+    }
+
+    function renderAlertas(alertas) {
+        const container = document.getElementById('alertasDeficit');
+        if (!alertas.length) {
+            container.innerHTML = `
+                <div class="card p-6 border-l-4 border-green-500">
+                    <div class="flex items-center gap-3">
+                        <i data-lucide="check-circle" class="w-6 h-6 text-green-600"></i>
+                        <div>
+                            <h3 class="font-semibold text-green-800">Capacidade atende a meta nos cenários pessimista e médio</h3>
+                            <p class="text-sm text-green-700">Todas as rotas projetadas cumprem suas metas mensais em ambos os cenários.</p>
+                        </div>
+                    </div>
+                </div>`;
+        } else {
+            const html = alertas.slice(0, 8).map(a => {
+                const isPe = a.cen === 'pessimista';
+                const cls  = isPe ? 'deficit-alert' : 'deficit-alert-medio';
+                const corT = isPe ? 'text-red-800'    : 'text-orange-800';
+                const corS = isPe ? 'text-red-700'    : 'text-orange-700';
+                const tag  = isPe ? '🔴 Pessimista'  : '🟠 Médio';
+                return `
+                <div class="${cls} mb-3">
+                    <div class="flex justify-between items-start gap-2">
+                        <div>
+                            <h4 class="font-bold ${corT}">⚠️ ${a.rota} — ${a.mes} <span class="text-sm font-normal">(${tag})</span></h4>
+                            <p class="text-sm ${corS} mt-1">Meta ${a.meta.toLocaleString('pt-BR')} t · Cap. ${Math.round(a.cap).toLocaleString('pt-BR')} t</p>
+                        </div>
+                        <p class="text-lg font-bold ${corT}">-${Math.round(a.deficit).toLocaleString('pt-BR')} t</p>
+                    </div>
+                </div>`;
+            }).join('');
+            const mais = alertas.length > 8 ? `<p class="text-center text-gray-500 mt-2">+ ${alertas.length - 8} alertas adicionais</p>` : '';
+            container.innerHTML = `
+                <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
+                    <i data-lucide="alert-triangle" class="w-5 h-5 text-red-600"></i>
+                    Alerta de déficit em cenários Pessimista e Médio (${alertas.length})
+                </h3>${html}${mais}`;
+        }
+        lucide.createIcons();
+    }
+
+    function renderChartDashboard(d) {
+        const ctx = document.getElementById('chartDashboard').getContext('2d');
+        if (chartDashboard) chartDashboard.destroy();
+
+        // Deltas para empilhamento: pess (base) + delta médio + delta otimista
+        const deltaMedio   = d.medio.map((v, i)    => Math.max(0, v - d.pessimista[i]));
+        const deltaOtimista= d.otimista.map((v, i) => Math.max(0, v - d.medio[i]));
+
+        // Captura os valores reais para tooltip correto
+        const realPess = d.pessimista.slice();
+        const realMed  = d.medio.slice();
+        const realOt   = d.otimista.slice();
+
+        chartDashboard = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: d.labels,
+                datasets: [
+                    {
+                        label: 'Pessimista',
+                        data: realPess,
+                        backgroundColor: '#ef4444',
+                        stack: 'cap'
+                    },
+                    {
+                        label: 'Δ Médio',
+                        data: deltaMedio,
+                        backgroundColor: '#22c55e',
+                        stack: 'cap'
+                    },
+                    {
+                        label: 'Δ Otimista',
+                        data: deltaOtimista,
+                        backgroundColor: '#3b82f6',
+                        stack: 'cap'
+                    },
+                    {
+                        label: 'Budget',
+                        data: d.metas,
+                        type: 'line',
+                        borderColor: '#374151',
+                        borderWidth: 2,
+                        borderDash: [8, 4],
+                        pointStyle: 'circle',
+                        pointRadius: 6,
+                        pointBackgroundColor: 'white',
+                        pointBorderColor: '#374151',
+                        pointBorderWidth: 2,
+                        fill: false,
+                        tension: 0,
+                        order: -1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { intersect: false, mode: 'index' },
+                plugins: {
+                    legend: { position: 'bottom' },
+                    tooltip: {
+                        callbacks: {
+                            label: c => {
+                                const i = c.dataIndex;
+                                if (c.dataset.label === 'Pessimista')
+                                    return `Pessimista: ${Math.round(realPess[i]).toLocaleString('pt-BR')} t`;
+                                if (c.dataset.label === 'Δ Médio')
+                                    return `Médio: ${Math.round(realMed[i]).toLocaleString('pt-BR')} t`;
+                                if (c.dataset.label === 'Δ Otimista')
+                                    return `Otimista: ${Math.round(realOt[i]).toLocaleString('pt-BR')} t`;
+                                return `Budget: ${Math.round(c.parsed.y).toLocaleString('pt-BR')} t`;
+                            },
+                            afterBody: items => {
+                                const i = items[0]?.dataIndex;
+                                const meta = d.metas[i];
+                                if (!meta) return [];
+                                const pctPe = Math.round((realPess[i] / meta) * 100);
+                                const pctMe = Math.round((realMed[i]  / meta) * 100);
+                                return [
+                                    `─────────────────`,
+                                    `${pctPe >= 100 ? '✓' : '⚠'} Pessimista cobre ${pctPe}% do budget`,
+                                    `${pctMe >= 100 ? '✓' : '⚠'} Médio cobre ${pctMe}% do budget`
+                                ];
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { stacked: true, ticks: { maxRotation: 55, minRotation: 35 } },
+                    y: {
+                        stacked: true,
+                        title: { display: true, text: 'Volume (t)' },
+                        ticks: { callback: v => v.toLocaleString('pt-BR') }
+                    }
+                }
+            }
+        });
+    }
+
+    // ==========================================================================
+    // Utils
+    // ==========================================================================
+    function formatDate(dateStr) {
+        if (!dateStr) return '';
+        const [ano, mes, dia] = dateStr.substring(0,10).split('-');
+        return `${dia}/${mes}/${ano}`;
+    }
+
+    // Fechar modais ao clicar fora
+    document.querySelectorAll('.modal').forEach(m => {
+        m.addEventListener('click', e => { if (e.target === m) m.classList.remove('active'); });
+    });
+    </script>
+</body>
+</html>
