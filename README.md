@@ -18,6 +18,8 @@ O sistema integra projeções de nível de rios com cálculo de capacidade da fr
 - Cenários customizados (desvio, percentual ou nível fixo por mês)
 - Variáveis de navegação configuráveis: **Ábaco** (padrão 1,03) e **FAQ** (padrão 0,50)
 - Fórmula: `Calado Operacional = Nível do Rio + Ábaco − FAQ`
+- Controle de horizonte de tendência (1 a 20 anos, padrão 3 anos)
+- Exibição opcional de linhas de **calado mínimo** dos ativos no gráfico de projeção
 - Avaliação de aderência: comparação de projeções do ano anterior vs. valores reais observados (MAE, MAPE)
 
 ### Ativos (Frota)
@@ -36,6 +38,8 @@ O sistema integra projeções de nível de rios com cálculo de capacidade da fr
 - Gráfico de barras empilhadas: capacidade pessimista / delta médio / delta otimista vs. meta
 - Tabela rota × mês com status (OK / ALERTA / DÉFICIT)
 - Drill-down por viagem: cálculo por empurrador, calado por barcaça, volume por viagem e ciclo em horas
+- Filtros por rota e alternância de visão **por rota** ou **por mês (total)**
+- Inclusão de cenários customizados também na análise do dashboard
 
 ## Tecnologias
 
@@ -68,18 +72,31 @@ Sem frameworks JavaScript — apenas HTML, CSS e JS vanilla.
 |---|---|
 | **localStorage** | Persistência automática na sessão do navegador |
 | **IndexedDB** | Armazena handles de arquivos entre sessões |
-| **File System Access API** | Salva `seca-track-db.json` em pasta escolhida pelo usuário (Chrome/Edge) com auto-save de 700 ms |
+| **File System Access API** | Salva `seca-track-db.json` em pasta escolhida pelo usuário (Chrome/Edge), tenta restaurar acesso na abertura e executa auto-save de 700 ms |
 
 ### Exportação / Importação
 - **JSON** — exporta/importa o banco de dados completo com timestamp e versão
 - **CSV** — exporta projeções de nível dos rios para análise em planilhas
+- **Backup rápido** — exportação JSON nomeada automaticamente no padrão `seca-track-backup-AAAA-MM-DD.json`
 
 ## Estrutura do Projeto
 
 ```
 Seca-Track/
-└── seca-track.html   # Aplicação completa (HTML + CSS + JS em arquivo único)
+├── seca-track.html            # Aplicação completa (HTML + CSS + JS em arquivo único)
+└── scripts/auto_commit_push.sh # Script para commit/push automático no Git
 ```
+
+## Automação de Commit/Pull
+
+Para automatizar commit (e push quando houver `origin` configurado):
+
+```bash
+./scripts/auto_commit_push.sh "feat: sua mensagem de commit" [branch]
+```
+
+- Se não houver `remote origin`, o script faz o commit local e orienta como configurar.
+- Se não houver alterações no working tree, ele encerra sem erro.
 
 ## Formato dos Dados de Nível
 
