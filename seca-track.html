@@ -327,7 +327,7 @@
                             <tr>
                                 <th>Rota</th><th>Rio</th>
                                 <th>Viagem (h)</th><th>t/h Carga</th><th>t/h Descarga</th>
-                                <th>Meta Anual (t)</th>
+                                <th>Cidades</th><th>Meses Ativos</th>
                                 <th>Frota</th>
                                 <th>Ações</th>
                             </tr>
@@ -338,6 +338,40 @@
                 <p class="text-xs text-gray-500 mt-3">
                     Ciclo do empurrador = carga (vol÷t/h) + viagem ida+volta + descarga (vol÷t/h) + espera. As viagens possíveis no mês são calculadas automaticamente com base no calado previsto.
                 </p>
+            </div>
+            <div class="grid-2">
+                <div class="card p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg font-semibold flex items-center gap-2">
+                            <i data-lucide="building-2" class="w-5 h-5 text-blue-600"></i> Demandas por Cidade
+                        </h2>
+                        <button onclick="openModal('cidadeDemanda')" class="btn-primary text-sm flex items-center gap-1">
+                            <i data-lucide="plus" class="w-4 h-4"></i> Nova Cidade
+                        </button>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead><tr><th>Cidade</th><th>Meta Anual (t)</th><th>Ações</th></tr></thead>
+                            <tbody id="tbodyCidadesDemanda"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="card p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg font-semibold flex items-center gap-2">
+                            <i data-lucide="network" class="w-5 h-5 text-blue-600"></i> Cenários de Rotas
+                        </h2>
+                        <button onclick="openModal('cenarioRota')" class="btn-primary text-sm flex items-center gap-1">
+                            <i data-lucide="plus" class="w-4 h-4"></i> Novo Cenário
+                        </button>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead><tr><th>Cenário</th><th>Rotas</th><th>Ações</th></tr></thead>
+                            <tbody id="tbodyCenariosRota"></tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -378,6 +412,12 @@
                             <option value="">Todas as rotas</option>
                         </select>
                     </div>
+                    <div class="flex items-center gap-2">
+                        <label class="text-sm font-medium text-gray-600 whitespace-nowrap">Cenário de rotas:</label>
+                        <select id="dashFiltroCenarioRota" class="input-field text-sm py-1" style="min-width:220px; width:auto" onchange="updateDashboard()">
+                            <option value="">Padrão (todas as rotas)</option>
+                        </select>
+                    </div>
                     <div class="flex items-center gap-2 ml-auto">
                         <span class="text-sm text-gray-500 whitespace-nowrap">Visão:</span>
                         <div class="flex rounded-lg overflow-hidden border border-gray-300">
@@ -409,6 +449,13 @@
                     </div>
                 </div>
                 <div class="chart-container" style="height: 420px;"><canvas id="chartDashboard"></canvas></div>
+            </div>
+            <div class="card p-6 mb-6">
+                <h2 class="text-lg font-semibold flex items-center gap-2 mb-4">
+                    <i data-lucide="git-compare" class="w-5 h-5 text-blue-600"></i>
+                    Comparação entre Cenários de Rotas
+                </h2>
+                <div class="chart-container" style="height: 300px;"><canvas id="chartComparativoCenarios"></canvas></div>
             </div>
 
             <!-- Alertas -->
@@ -560,8 +607,13 @@
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Meta Mensal de Volume (t)</label>
-                    <div id="metasGrid" class="grid grid-cols-3 md:grid-cols-6 gap-2"></div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Cidades Atendidas por esta Rota *</label>
+                    <div id="rotaCidadesGrid" class="grid grid-cols-1 md:grid-cols-2 gap-2"></div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Meses de Operação da Rota</label>
+                    <div id="rotaMesesAtivosGrid" class="grid grid-cols-3 md:grid-cols-6 gap-2"></div>
                 </div>
 
                 <div>
@@ -576,6 +628,56 @@
                 <div class="flex gap-3 pt-4">
                     <button onclick="saveRota()" class="btn-primary flex-1">Salvar</button>
                     <button onclick="closeModal('rota')" class="btn-secondary flex-1">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Cidade (Demanda) -->
+    <div id="modalCidadeDemanda" class="modal">
+        <div class="modal-content wide p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold" id="tituloCidadeDemanda">Nova Cidade</h3>
+                <button onclick="closeModal('cidadeDemanda')" class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <input type="hidden" id="cidadeDemandaId">
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Cidade *</label>
+                    <input type="text" id="cidadeDemandaNome" class="input-field" placeholder="Ex: Manaus">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Meta mensal de volume (t)</label>
+                    <div id="cidadeMetasGrid" class="grid grid-cols-3 md:grid-cols-6 gap-2"></div>
+                </div>
+                <div class="flex gap-3 pt-4">
+                    <button onclick="saveCidadeDemanda()" class="btn-primary flex-1">Salvar</button>
+                    <button onclick="closeModal('cidadeDemanda')" class="btn-secondary flex-1">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Cenário de Rotas -->
+    <div id="modalCenarioRota" class="modal">
+        <div class="modal-content p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold" id="tituloCenarioRota">Novo Cenário de Rotas</h3>
+                <button onclick="closeModal('cenarioRota')" class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <input type="hidden" id="cenarioRotaId">
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Nome do cenário *</label>
+                    <input type="text" id="cenarioRotaNome" class="input-field" placeholder="Ex: Operação seca severa">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Rotas deste cenário *</label>
+                    <div id="cenarioRotaRotasGrid" class="space-y-2 max-h-52 overflow-y-auto border border-gray-200 rounded-md p-3"></div>
+                </div>
+                <div class="flex gap-3 pt-4">
+                    <button onclick="saveCenarioRota()" class="btn-primary flex-1">Salvar</button>
+                    <button onclick="closeModal('cenarioRota')" class="btn-secondary flex-1">Cancelar</button>
                 </div>
             </div>
         </div>
@@ -749,6 +851,8 @@
     let empurradores  = [];
     let barcacas      = [];   // "tipos de barcaça"
     let rotas         = [];
+    let cidadesDemanda = [];
+    let cenariosRotas  = [];
     let variaveis     = {
         abaco: 1.03,
         faq: 0.50,
@@ -763,6 +867,7 @@
     };
     let chartRios = null;
     let chartDashboard = null;
+    let chartComparativoCenarios = null;
     let dashViewMode = 'rota'; // 'rota' | 'mes'
     let _detalhesMesCache = []; // cache para o modal de detalhes do mês
     let dashCenariosVisiveis = {}; // id -> bool; ausente = visível
@@ -790,7 +895,8 @@
 
     // ---------- Inicialização ----------
     document.addEventListener('DOMContentLoaded', async () => {
-        buildMetasGrid();
+        buildCidadeMetasGrid();
+        buildRotaMesesAtivosGrid();
         lucide.createIcons();
         loadFromLocalStorage();
         applyVariaveisToInputs();
@@ -799,20 +905,32 @@
         updateAllViews();
     });
 
-    function buildMetasGrid() {
-        const grid = document.getElementById('metasGrid');
+    function buildCidadeMetasGrid() {
+        const grid = document.getElementById('cidadeMetasGrid');
+        if (!grid) return;
         grid.innerHTML = MESES.map(m => `
             <div>
                 <label class="text-xs text-gray-500">${m}</label>
-                <input type="number" id="meta${m}" class="input-field text-sm" placeholder="t">
+                <input type="number" id="cidadeMeta${m}" class="input-field text-sm" placeholder="t">
             </div>
+        `).join('');
+    }
+
+    function buildRotaMesesAtivosGrid() {
+        const grid = document.getElementById('rotaMesesAtivosGrid');
+        if (!grid) return;
+        grid.innerHTML = MESES.map((m, i) => `
+            <label class="flex items-center gap-2 text-sm border rounded px-2 py-1">
+                <input type="checkbox" id="rotaMesAtivo${i}" checked>
+                <span>${m}</span>
+            </label>
         `).join('');
     }
 
     // ---------- Persistência ----------
     function serializeState() {
         return {
-            dadosRios, empurradores, barcacas, rotas, variaveis,
+            dadosRios, empurradores, barcacas, rotas, cidadesDemanda, cenariosRotas, variaveis,
             exportDate: new Date().toISOString(),
             version: '2.0'
         };
@@ -823,6 +941,8 @@
         empurradores = data.empurradores || [];
         barcacas     = data.barcacas || [];
         rotas        = data.rotas || [];
+        cidadesDemanda = data.cidadesDemanda || [];
+        cenariosRotas  = data.cenariosRotas || [];
         variaveis    = Object.assign({
             abaco: 1.03, faq: 0.50, anosProjecao: 3,
             cenarios: { otimista:{abaco:null,faq:null}, medio:{abaco:null,faq:null}, pessimista:{abaco:null,faq:null} },
@@ -836,6 +956,10 @@
         // Retrocompatibilidade: garante campo ativo nos ativos existentes
         empurradores.forEach(e => { if (e.ativo === undefined) e.ativo = true; });
         barcacas.forEach(b => { if (b.ativo === undefined) b.ativo = true; });
+        rotas.forEach(r => {
+            if (!Array.isArray(r.cidadesAtendidas)) r.cidadesAtendidas = [];
+            if (!Array.isArray(r.mesesAtivos) || r.mesesAtivos.length !== 12) r.mesesAtivos = Array(12).fill(true);
+        });
     }
 
     function applyVariaveisToInputs() {
@@ -1032,6 +1156,8 @@
         renderTabelaBarcacas();
         renderTabelaEmpurradores();
         renderTabelaRotas();
+        renderTabelaCidadesDemanda();
+        renderTabelaCenariosRota();
         updateSelectRios();
         updateFiltroRio();
         renderCaladosToggle();
@@ -1700,10 +1826,8 @@
                 document.getElementById('rotaTonHoraOrigem').value  = r.tonHoraOrigem ?? '';
                 document.getElementById('rotaTonHoraDestino').value = r.tonHoraDestino ?? '';
                 document.getElementById('rotaTempoEspera').value    = r.tempoEsperaH ?? 0;
-                (r.metas||[]).forEach((v,i) => {
-                    const inp = document.getElementById(`meta${MESES[i]}`);
-                    if (inp) inp.value = v || '';
-                });
+                renderRotaCidadesSelector(r.cidadesAtendidas || []);
+                setRotaMesesAtivosInputs(r.mesesAtivos || Array(12).fill(true));
                 renderEmpurradoresRota(r.empurradores || []);
             } else {
                 document.getElementById('rotaNome').value = '';
@@ -1712,10 +1836,44 @@
                 document.getElementById('rotaTonHoraOrigem').value  = 1000;
                 document.getElementById('rotaTonHoraDestino').value = 1000;
                 document.getElementById('rotaTempoEspera').value    = 0;
-                MESES.forEach(m => document.getElementById(`meta${m}`).value = '');
+                renderRotaCidadesSelector([]);
+                setRotaMesesAtivosInputs(Array(12).fill(true));
                 renderEmpurradoresRota([]);
             }
             document.getElementById('modalRota').classList.add('active');
+
+        } else if (tipo === 'cidadeDemanda') {
+            document.getElementById('tituloCidadeDemanda').textContent = id ? 'Editar Cidade' : 'Nova Cidade';
+            document.getElementById('cidadeDemandaId').value = id || '';
+            if (id) {
+                const c = cidadesDemanda.find(x => x.id === id);
+                document.getElementById('cidadeDemandaNome').value = c.nome || '';
+                (c.metas || []).forEach((v, i) => {
+                    const inp = document.getElementById(`cidadeMeta${MESES[i]}`);
+                    if (inp) inp.value = v || '';
+                });
+            } else {
+                document.getElementById('cidadeDemandaNome').value = '';
+                MESES.forEach(m => {
+                    const inp = document.getElementById(`cidadeMeta${m}`);
+                    if (inp) inp.value = '';
+                });
+            }
+            document.getElementById('modalCidadeDemanda').classList.add('active');
+
+        } else if (tipo === 'cenarioRota') {
+            document.getElementById('tituloCenarioRota').textContent = id ? 'Editar Cenário de Rotas' : 'Novo Cenário de Rotas';
+            document.getElementById('cenarioRotaId').value = id || '';
+            const cen = id ? cenariosRotas.find(x => x.id === id) : null;
+            document.getElementById('cenarioRotaNome').value = cen?.nome || '';
+            const grid = document.getElementById('cenarioRotaRotasGrid');
+            grid.innerHTML = rotas.map(r => `
+                <label class="flex items-center gap-2 text-sm">
+                    <input type="checkbox" class="cenario-rota-check" value="${r.id}" ${(cen?.rotasIds || []).includes(r.id) ? 'checked' : ''}>
+                    <span>${r.nome}</span>
+                </label>
+            `).join('') || '<p class="text-xs text-gray-400">Cadastre ao menos uma rota antes de criar cenários.</p>';
+            document.getElementById('modalCenarioRota').classList.add('active');
 
         } else if (tipo === 'cenarios') {
             const c = variaveis.cenarios;
@@ -1923,6 +2081,37 @@
         sel.innerHTML = '<option value="">Selecione...</option>' + rios.map(r => `<option value="${r}">${r}</option>`).join('');
     }
 
+    function renderRotaCidadesSelector(selected = []) {
+        const el = document.getElementById('rotaCidadesGrid');
+        if (!el) return;
+        if (cidadesDemanda.length === 0) {
+            el.innerHTML = '<p class="text-xs text-gray-400">Cadastre cidades de demanda antes de salvar a rota.</p>';
+            return;
+        }
+        el.innerHTML = cidadesDemanda.map(c => `
+            <label class="flex items-center gap-2 text-sm border rounded px-2 py-1">
+                <input type="checkbox" class="rota-cidade-check" value="${c.id}" ${selected.includes(c.id) ? 'checked' : ''}>
+                <span>${c.nome}</span>
+            </label>
+        `).join('');
+    }
+
+    function getRotaMesesAtivosFromInputs() {
+        return MESES.map((_, i) => !!document.getElementById(`rotaMesAtivo${i}`)?.checked);
+    }
+
+    function setRotaMesesAtivosInputs(mesesAtivos = Array(12).fill(true)) {
+        MESES.forEach((_, i) => {
+            const inp = document.getElementById(`rotaMesAtivo${i}`);
+            if (inp) inp.checked = mesesAtivos[i] !== false;
+        });
+    }
+
+    function rotaAtivaNoMes(rota, mes) {
+        if (!Array.isArray(rota.mesesAtivos) || rota.mesesAtivos.length !== 12) return true;
+        return rota.mesesAtivos[mes] !== false;
+    }
+
     function renderEmpurradoresRota(lista) {
         const container = document.getElementById('empurradoresRota');
         container.innerHTML = '';
@@ -2030,10 +2219,8 @@
         if (!nome || !rio) { alert('Nome e rio são obrigatórios.'); return; }
         if (tonHoraOrigem <= 0 || tonHoraDestino <= 0) { alert('Informe taxas de originação e elevação maiores que zero.'); return; }
 
-        const metas = MESES.map(m => {
-            const v = parseFloat(document.getElementById(`meta${m}`).value);
-            return isNaN(v) ? 0 : v;
-        });
+        const cidadesAtendidas = [...document.querySelectorAll('.rota-cidade-check:checked')].map(el => parseFloat(el.value));
+        const mesesAtivos = getRotaMesesAtivosFromInputs();
 
         const rotaEmps = [];
         let erroComboio = null;
@@ -2065,13 +2252,15 @@
         });
 
         if (rotaEmps.length === 0) { alert('Adicione pelo menos um empurrador à rota.'); return; }
+        if (cidadesAtendidas.length === 0) { alert('Selecione ao menos uma cidade atendida para a rota.'); return; }
         if (erroComboio) { alert(erroComboio); return; }
 
         const rota = {
             id: id ? parseFloat(id) : Date.now() + Math.random(),
             nome, rio,
             tempoViagemH, tonHoraOrigem, tonHoraDestino, tempoEsperaH,
-            metas,
+            cidadesAtendidas,
+            mesesAtivos,
             empurradores: rotaEmps
         };
 
@@ -2088,19 +2277,22 @@
     function deleteRota(id) {
         if (!confirm('Excluir esta rota?')) return;
         rotas = rotas.filter(r => r.id !== id);
+        cenariosRotas.forEach(c => c.rotasIds = (c.rotasIds || []).filter(rid => rid !== id));
         saveToLocalStorage();
         renderTabelaRotas();
+        renderTabelaCenariosRota();
     }
 
     function renderTabelaRotas() {
         const tbody = document.getElementById('tbodyRotas');
         tbody.innerHTML = '';
         if (rotas.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-gray-400 py-4">Nenhuma rota cadastrada</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-gray-400 py-4">Nenhuma rota cadastrada</td></tr>';
             return;
         }
         rotas.forEach(r => {
-            const metaAnual = (r.metas||[]).reduce((a,b)=>a+b,0);
+            const cidadesTxt = (r.cidadesAtendidas || []).map(id => cidadesDemanda.find(c => c.id === id)?.nome || '?').join(', ') || '-';
+            const mesesAtivosTxt = (r.mesesAtivos || []).map((v, i) => v ? MESES[i] : null).filter(Boolean);
             const frota = (r.empurradores||[]).map(it => {
                 const e = empurradores.find(x => x.id === it.empurradorId);
                 const nomeEmp = e ? e.nome : '?';
@@ -2117,11 +2309,115 @@
                 <td>${(r.tempoViagemH||0).toFixed(1)} h</td>
                 <td>${(r.tonHoraOrigem||0).toLocaleString('pt-BR')}</td>
                 <td>${(r.tonHoraDestino||0).toLocaleString('pt-BR')}</td>
-                <td>${metaAnual.toLocaleString('pt-BR')}</td>
+                <td>${cidadesTxt}</td>
+                <td class="text-xs">${mesesAtivosTxt.length === 12 ? 'Ano inteiro' : mesesAtivosTxt.join(', ')}</td>
                 <td class="text-xs">${frota || '-'}</td>
                 <td class="flex gap-2">
                     <button onclick="openModal('rota', ${r.id})" class="text-blue-600 hover:text-blue-800"><i data-lucide="edit" class="w-4 h-4"></i></button>
                     <button onclick="deleteRota(${r.id})" class="text-red-600 hover:text-red-800"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                </td>`;
+            tbody.appendChild(tr);
+        });
+        lucide.createIcons();
+    }
+
+    function saveCidadeDemanda() {
+        const id = document.getElementById('cidadeDemandaId').value;
+        const nome = document.getElementById('cidadeDemandaNome').value.trim();
+        if (!nome) { alert('Informe o nome da cidade.'); return; }
+        const metas = MESES.map(m => {
+            const v = parseFloat(document.getElementById(`cidadeMeta${m}`).value);
+            return isNaN(v) ? 0 : v;
+        });
+        const item = { id: id ? parseFloat(id) : Date.now() + Math.random(), nome, metas };
+        if (id) {
+            const i = cidadesDemanda.findIndex(c => c.id == id);
+            cidadesDemanda[i] = item;
+        } else cidadesDemanda.push(item);
+        saveToLocalStorage();
+        renderTabelaCidadesDemanda();
+        closeModal('cidadeDemanda');
+    }
+
+    function deleteCidadeDemanda(id) {
+        if (!confirm('Excluir esta cidade e suas metas?')) return;
+        cidadesDemanda = cidadesDemanda.filter(c => c.id !== id);
+        rotas.forEach(r => r.cidadesAtendidas = (r.cidadesAtendidas || []).filter(cid => cid !== id));
+        saveToLocalStorage();
+        updateAllViews();
+    }
+
+    function renderTabelaCidadesDemanda() {
+        const tbody = document.getElementById('tbodyCidadesDemanda');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        if (cidadesDemanda.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-gray-400 py-4">Nenhuma cidade cadastrada</td></tr>';
+            return;
+        }
+        cidadesDemanda.forEach(c => {
+            const metaAnual = (c.metas || []).reduce((s, v) => s + (v || 0), 0);
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="font-medium">${c.nome}</td>
+                <td>${Math.round(metaAnual).toLocaleString('pt-BR')}</td>
+                <td class="flex gap-2">
+                    <button onclick="openModal('cidadeDemanda', ${c.id})" class="text-blue-600 hover:text-blue-800"><i data-lucide="edit" class="w-4 h-4"></i></button>
+                    <button onclick="deleteCidadeDemanda(${c.id})" class="text-red-600 hover:text-red-800"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                </td>`;
+            tbody.appendChild(tr);
+        });
+        lucide.createIcons();
+    }
+
+    function saveCenarioRota() {
+        const id = document.getElementById('cenarioRotaId').value;
+        const nome = document.getElementById('cenarioRotaNome').value.trim();
+        const rotasIds = [...document.querySelectorAll('.cenario-rota-check:checked')].map(el => parseFloat(el.value));
+        if (!nome) { alert('Informe o nome do cenário.'); return; }
+        if (rotasIds.length === 0) { alert('Selecione ao menos uma rota para o cenário.'); return; }
+        const item = { id: id ? parseFloat(id) : Date.now() + Math.random(), nome, rotasIds };
+        if (id) {
+            const i = cenariosRotas.findIndex(c => c.id == id);
+            cenariosRotas[i] = item;
+        } else cenariosRotas.push(item);
+        saveToLocalStorage();
+        renderTabelaCenariosRota();
+        closeModal('cenarioRota');
+    }
+
+    function deleteCenarioRota(id) {
+        if (!confirm('Excluir este cenário de rotas?')) return;
+        cenariosRotas = cenariosRotas.filter(c => c.id !== id);
+        saveToLocalStorage();
+        renderTabelaCenariosRota();
+        updateDashboard();
+    }
+
+    function renderTabelaCenariosRota() {
+        const tbody = document.getElementById('tbodyCenariosRota');
+        const filtro = document.getElementById('dashFiltroCenarioRota');
+        if (filtro) {
+            const atual = filtro.value;
+            filtro.innerHTML = '<option value="">Padrão (todas as rotas)</option>' +
+                cenariosRotas.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+            if ([...filtro.options].some(o => o.value === atual)) filtro.value = atual;
+        }
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        if (cenariosRotas.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-gray-400 py-4">Nenhum cenário de rota cadastrado</td></tr>';
+            return;
+        }
+        cenariosRotas.forEach(c => {
+            const nomesRotas = (c.rotasIds || []).map(id => rotas.find(r => r.id === id)?.nome || '?').join(', ');
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="font-medium">${c.nome}</td>
+                <td class="text-xs">${nomesRotas || '-'}</td>
+                <td class="flex gap-2">
+                    <button onclick="openModal('cenarioRota', ${c.id})" class="text-blue-600 hover:text-blue-800"><i data-lucide="edit" class="w-4 h-4"></i></button>
+                    <button onclick="deleteCenarioRota(${c.id})" class="text-red-600 hover:text-red-800"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                 </td>`;
             tbody.appendChild(tr);
         });
@@ -2358,6 +2654,7 @@
     }
 
     function calcularCapacidadeRotaMes(rota, mes, ano, nivelRio, cenario) {
+        if (!rotaAtivaNoMes(rota, mes)) return { total: 0, detalhes: [] };
         let total = 0;
         const detalhes = [];
         (rota.empurradores||[]).forEach(it => {
@@ -2378,6 +2675,34 @@
         updateDashboard();
     }
 
+    function getRotasAtivasPorCenarioSelecionado() {
+        const filtroCenarioEl = document.getElementById('dashFiltroCenarioRota');
+        const filtroCenarioId = filtroCenarioEl && filtroCenarioEl.value ? parseFloat(filtroCenarioEl.value) : null;
+        if (!filtroCenarioId) return rotas.slice();
+        const cen = cenariosRotas.find(c => c.id === filtroCenarioId);
+        if (!cen) return [];
+        return rotas.filter(r => (cen.rotasIds || []).includes(r.id));
+    }
+
+    function calcularDemandaMensalPorRota(rotasCenario, mes) {
+        const mapa = {};
+        const cidadesIds = new Set();
+        rotasCenario.forEach(r => (r.cidadesAtendidas || []).forEach(cid => cidadesIds.add(cid)));
+        cidadesIds.forEach(cid => {
+            const cidade = cidadesDemanda.find(c => c.id === cid);
+            if (!cidade) return;
+            const demanda = (cidade.metas || [])[mes] || 0;
+            const rotasCidade = rotasCenario.filter(r => rotaAtivaNoMes(r, mes) && (r.cidadesAtendidas || []).includes(cid));
+            if (rotasCidade.length === 0) return;
+            const rateio = demanda / rotasCidade.length;
+            rotasCidade.forEach(r => { mapa[r.id] = (mapa[r.id] || 0) + rateio; });
+        });
+        return {
+            porRota: mapa,
+            total: Object.values(mapa).reduce((s, v) => s + v, 0)
+        };
+    }
+
     function updateDashboard() {
         const tbody = document.getElementById('tbodyDashboard');
         tbody.innerHTML = '';
@@ -2391,7 +2716,8 @@
             if ([...filtroEl.options].some(o => o.value === prevFiltro)) filtroEl.value = prevFiltro;
         }
         const filtroRotaId = filtroEl && filtroEl.value ? parseFloat(filtroEl.value) : null;
-        const rotasFiltradas = filtroRotaId ? rotas.filter(r => r.id === filtroRotaId) : rotas;
+        const rotasDoCenario = getRotasAtivasPorCenarioSelecionado();
+        const rotasFiltradas = filtroRotaId ? rotasDoCenario.filter(r => r.id === filtroRotaId) : rotasDoCenario;
 
         if (rotasFiltradas.length === 0 || dadosRios.length === 0) {
             tbody.innerHTML = '<tr><td colspan="8" class="text-center text-gray-500 py-6">Cadastre rotas e importe dados de rio para visualizar o dashboard</td></tr>';
@@ -2401,6 +2727,7 @@
             document.getElementById('resumoMeta').textContent = '-';
             renderAlertas([]);
             renderChartDashboard({labels:[],metas:[],otimista:[],medio:[],pessimista:[]});
+            renderChartComparativoCenarios(new Date().getFullYear(), new Date().getMonth());
             return;
         }
 
@@ -2429,9 +2756,11 @@
                 const projMap = getProjecaoPorMes(rota.rio);
                 if (!projMap) return;
                 for (let mes = mesAtual; mes < 12; mes++) {
+                    if (!rotaAtivaNoMes(rota, mes)) continue;
                     const p = projMap[mes];
                     if (!p) continue;
-                    const meta  = (rota.metas||[])[mes] || 0;
+                    const demandaRateio = calcularDemandaMensalPorRota(rotasFiltradas, mes);
+                    const meta  = demandaRateio.porRota[rota.id] || 0;
                     const capOt = calcularCapacidadeRotaMes(rota, mes, ano, p.otimista,   'otimista');
                     const capMe = calcularCapacidadeRotaMes(rota, mes, ano, p.medio,      'medio');
                     const capPe = calcularCapacidadeRotaMes(rota, mes, ano, p.pessimista, 'pessimista');
@@ -2493,9 +2822,11 @@
                 const projMap = getProjecaoPorMes(rota.rio);
                 if (!projMap) return;
                 for (let mes = mesAtual; mes < 12; mes++) {
+                    if (!rotaAtivaNoMes(rota, mes)) continue;
                     const p = projMap[mes];
                     if (!p) continue;
-                    const meta  = (rota.metas||[])[mes] || 0;
+                    const demandaRateio = calcularDemandaMensalPorRota(rotasFiltradas, mes);
+                    const meta  = demandaRateio.porRota[rota.id] || 0;
                     const capOt = calcularCapacidadeRotaMes(rota, mes, ano, p.otimista,   'otimista');
                     const capMe = calcularCapacidadeRotaMes(rota, mes, ano, p.medio,      'medio');
                     const capPe = calcularCapacidadeRotaMes(rota, mes, ano, p.pessimista, 'pessimista');
@@ -2536,6 +2867,7 @@
 
         renderAlertas(alertas);
         renderChartDashboard(chartData);
+        renderChartComparativoCenarios(ano, mesAtual);
         renderCenariosCustomDashboard(ano, mesAtual);
     }
 
@@ -2646,11 +2978,13 @@
                 const projMap = getProjecaoPorMes(rota.rio);
                 if (!projMap) return;
                 for (let mes = mesAtual; mes < 12; mes++) {
+                    if (!rotaAtivaNoMes(rota, mes)) continue;
                     const p = projMap[mes];
                     if (!p) continue;
                     const nivel = p.custom[cenConf.id] ?? p.medio;
                     const cap   = calcularCapacidadeRotaMes(rota, mes, ano, nivel, cenConf.id);
-                    const meta  = (rota.metas||[])[mes] || 0;
+                    const demandaRateio = calcularDemandaMensalPorRota(rotas, mes);
+                    const meta  = demandaRateio.porRota[rota.id] || 0;
                     totalCap   += cap.total;
                     const deficit = Math.max(0, meta - cap.total);
                     const badgeClass = deficit > 0 ? 'badge-danger' : 'badge-success';
@@ -2922,6 +3256,57 @@
                         ticks: { callback: v => v.toLocaleString('pt-BR') }
                     }
                 }
+            }
+        });
+    }
+
+    function renderChartComparativoCenarios(ano, mesAtual) {
+        const canvas = document.getElementById('chartComparativoCenarios');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (chartComparativoCenarios) chartComparativoCenarios.destroy();
+
+        const base = [{ id: null, nome: 'Padrão (todas as rotas)', rotasIds: rotas.map(r => r.id) }, ...(cenariosRotas || [])];
+        const labels = [];
+        const caps = [];
+        const metas = [];
+        const deficits = [];
+
+        base.forEach(cen => {
+            const rotasCen = rotas.filter(r => (cen.rotasIds || []).includes(r.id));
+            let capTotal = 0;
+            let metaTotal = 0;
+            for (let mes = mesAtual; mes < 12; mes++) {
+                const rateio = calcularDemandaMensalPorRota(rotasCen, mes);
+                metaTotal += rateio.total;
+                rotasCen.forEach(r => {
+                    if (!rotaAtivaNoMes(r, mes)) return;
+                    const p = getProjecaoPorMes(r.rio)?.[mes];
+                    if (!p) return;
+                    capTotal += calcularCapacidadeRotaMes(r, mes, ano, p.medio, 'medio').total;
+                });
+            }
+            labels.push(cen.nome);
+            caps.push(capTotal);
+            metas.push(metaTotal);
+            deficits.push(Math.max(0, metaTotal - capTotal));
+        });
+
+        chartComparativoCenarios = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [
+                    { label: 'Capacidade Média (t)', data: caps, backgroundColor: '#3b82f6' },
+                    { label: 'Meta (t)', data: metas, backgroundColor: '#9ca3af' },
+                    { label: 'Déficit (t)', data: deficits, backgroundColor: '#ef4444' }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom' } },
+                scales: { y: { ticks: { callback: v => Number(v).toLocaleString('pt-BR') } } }
             }
         });
     }
