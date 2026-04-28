@@ -156,7 +156,7 @@
                                 <input type="number" id="faq" value="0.50" step="0.01" class="input-field" onchange="updateVariaveis()">
                             </div>
                         </div>
-                        <p class="text-xs text-gray-500 mt-2">Calado operacional = Nível do Rio + Ábaco − FAQ</p>
+                        <p class="text-xs text-gray-500 mt-2">Nível mínimo navegável = Calado da Embarcação − Ábaco + FAQ</p>
                         <div class="mt-3 pt-3 border-t border-gray-100">
                             <label class="block text-xs text-gray-500 mb-1">
                                 Período considerado para o cálculo de tendência
@@ -228,6 +228,15 @@
                         <div id="botoesCalados" class="flex gap-2 flex-wrap"></div>
                     </div>
                 </div>
+                <!-- Anos históricos para comparação -->
+                <div class="mt-3 pt-3 border-t border-gray-100" id="painelAnosHistoricos" style="display:none">
+                    <div class="flex items-start gap-3 flex-wrap">
+                        <span class="text-xs font-medium text-gray-600 flex items-center gap-1 mt-1 shrink-0">
+                            <i data-lucide="history" class="w-3 h-3"></i> Comparar com anos:
+                        </span>
+                        <div id="botoesAnosHistoricos" class="flex gap-2 flex-wrap"></div>
+                    </div>
+                </div>
             </div>
 
             <!-- Aderência das previsões -->
@@ -254,6 +263,40 @@
                     </table>
                 </div>
                 <p class="text-xs text-gray-500 mt-2">* Projeção calculada usando apenas dados históricos de anos anteriores, sem os dados do ano corrente.</p>
+            </div>
+
+            <!-- Tempo de Parada das Embarcações -->
+            <div class="card p-6 mt-6" id="cardTempoParada" style="display:none">
+                <div class="flex justify-between items-center mb-3 flex-wrap gap-2">
+                    <h2 class="text-lg font-semibold flex items-center gap-2">
+                        <i data-lucide="timer-off" class="w-5 h-5 text-orange-500"></i>
+                        Tempo de Parada das Embarcações
+                    </h2>
+                    <span class="text-xs text-gray-500">Períodos em que o nível projetado impede ou restringe a navegação</span>
+                </div>
+                <!-- Filtros / pills de ativos -->
+                <div id="filtrosTempoParada" class="flex gap-2 flex-wrap mb-4"></div>
+                <!-- Gráfico de Gantt horizontal -->
+                <div id="containerChartTempoParada" style="position:relative;height:280px;width:100%">
+                    <canvas id="chartTempoParada"></canvas>
+                </div>
+                <!-- Tabela de detalhes -->
+                <div class="table-container mt-5">
+                    <table id="tabelaTempoParada">
+                        <thead>
+                            <tr>
+                                <th>Cenário</th>
+                                <th>Tipo</th>
+                                <th>Embarcação</th>
+                                <th>Início Restrição</th>
+                                <th>Retoma</th>
+                                <th>Dias</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbodyTempoParada"></tbody>
+                    </table>
+                </div>
+                <p class="text-xs text-gray-400 mt-2">Cálculo baseado em nível projetado mensal. Clique nas pílulas acima para filtrar ativos.</p>
             </div>
         </div>
 
@@ -502,7 +545,7 @@
                     <h2 class="text-lg font-semibold flex items-center gap-2">
                         <i data-lucide="warehouse" class="w-5 h-5 text-orange-500"></i> Rastreamento de Pulmão
                     </h2>
-                    <div class="text-xs text-gray-500">Monitoramento separado — não entra na capacidade final atendida</div>
+                    <div class="text-xs text-gray-500">Monitoramento separado — não entra na capacidade final atendida · <span class="text-blue-500">Clique em uma linha para ver detalhes</span></div>
                 </div>
                 <div class="table-container">
                     <table id="tabelaPulmaoDashboard">
@@ -967,6 +1010,10 @@
     let dashViewMode = 'rota'; // 'rota' | 'mes'
     let _detalhesMesCache = []; // cache para o modal de detalhes do mês
     let dashCenariosVisiveis = {}; // id -> bool; ausente = visível
+    let anosHistoricoSelecionados = new Set(); // anos a sobrepor no gráfico de rio
+    let ativosTempoParadaVisiveis = {}; // key -> bool; ausente = visível
+    let _pulmaoCache = []; // cache de dados de pulmão para o modal de detalhes
+    let chartTempoParada = null;
 
     // File System Access
     let dbDirHandle = null;      // DirectoryHandle escolhido pelo usuário
@@ -1785,6 +1832,40 @@
             });
         });
 
+        // Overlay de anos históricos selecionados
+        const HIST_CORES_OVERLAY = ['#6b7280','#92400e','#1e40af','#065f46','#7c3aed','#9d174d','#b45309','#0e7490'];
+        const anoAtualRef = new Date().getFullYear();
+        let histCorIdx = 0;
+        const historicosAdicionados = [];
+        for (const anoHist of [...anosHistoricoSelecionados].sort((a,b)=>a-b)) {
+            if (anoHist >= anoAtualRef) continue;
+            const nivelPorMes = Array.from({length: 12}, () => []);
+            dadosRios.filter(r => r.nome === rioSel).forEach(r => {
+                const d = new Date(r.data + 'T00:00:00');
+                if (d.getFullYear() === anoHist) nivelPorMes[d.getMonth()].push(r.nivel);
+            });
+            const dataHist = proj.mesesIdx.map(m => {
+                const vals = nivelPorMes[m];
+                return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+            });
+            if (dataHist.some(v => v !== null)) {
+                const cor = HIST_CORES_OVERLAY[histCorIdx++ % HIST_CORES_OVERLAY.length];
+                datasets.push({
+                    label: `Real ${anoHist}`,
+                    data: dataHist,
+                    borderColor: cor,
+                    backgroundColor: cor,
+                    borderDash: [4, 2],
+                    tension: 0.25,
+                    pointRadius: 3,
+                    spanGaps: false,
+                    borderWidth: 2,
+                    fill: false
+                });
+                historicosAdicionados.push({ cor, label: `Real ${anoHist}` });
+            }
+        }
+
         // Legenda dinâmica no header do card
         const legendaEl = document.getElementById('legendaGraficoRios');
         if (legendaEl) {
@@ -1795,10 +1876,13 @@
                 { cor:'#ef4444', label:'Pessimista' }
             ];
             const custom = (variaveis.cenariosCustom || []).map(c => ({ cor: c.cor, label: c.nome }));
-            legendaEl.innerHTML = [...base, ...custom].map(l =>
+            legendaEl.innerHTML = [...base, ...custom, ...historicosAdicionados].map(l =>
                 `<span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full shrink-0" style="background:${l.cor}"></span>${l.label}</span>`
             ).join('');
         }
+
+        // Atualizar botões de anos históricos
+        atualizarBotoesAnosHistoricos(rioSel);
 
         // Linhas de calado mínimo dos ativos visíveis
         let corIdx = 0;
@@ -1807,7 +1891,7 @@
             if (!visiveis[key]) return;
             const calMin = parseFloat(caladoMin);
             if (isNaN(calMin)) return;
-            const nivelMin = calMin + variaveis.abaco - variaveis.faq;
+            const nivelMin = calMin - variaveis.abaco + variaveis.faq;
             const cor = CALADO_CORES[corIdx++ % CALADO_CORES.length];
             datasets.push({
                 label: `${nome} (cal. op. mín. ${nivelMin.toFixed(2)} m)`,
@@ -1859,7 +1943,299 @@
         });
 
         renderAderencia(rioSel);
+        renderTempoParada(rioSel, proj);
     }
+
+    function atualizarBotoesAnosHistoricos(rioSel) {
+        const painel = document.getElementById('painelAnosHistoricos');
+        const container = document.getElementById('botoesAnosHistoricos');
+        if (!painel || !container) return;
+        const anoAtual = new Date().getFullYear();
+        const anos = [...new Set(
+            dadosRios
+                .filter(r => !rioSel || r.nome === rioSel)
+                .map(r => new Date(r.data + 'T00:00:00').getFullYear())
+        )].filter(a => a < anoAtual).sort((a, b) => b - a);
+        if (anos.length === 0) { painel.style.display = 'none'; return; }
+        painel.style.display = '';
+        container.innerHTML = anos.map(ano => {
+            const ativo = anosHistoricoSelecionados.has(ano);
+            return `<button onclick="toggleAnoHistorico(${ano})"
+                class="text-xs px-2 py-0.5 rounded-full border font-medium transition-all ${ativo ? 'bg-gray-700 text-white border-gray-700' : 'bg-white text-gray-600 border-gray-300 hover:border-gray-500'}">${ano}</button>`;
+        }).join('');
+    }
+
+    function toggleAnoHistorico(ano) {
+        if (anosHistoricoSelecionados.has(ano)) {
+            anosHistoricoSelecionados.delete(ano);
+        } else {
+            anosHistoricoSelecionados.add(ano);
+        }
+        updateRioChart();
+    }
+
+    // ==========================================================================
+    // TEMPO DE PARADA — projeção de restrições por embarcação
+    // ==========================================================================
+
+    function encontrarRangesConsecutivos(mesesRestrito) {
+        if (!mesesRestrito.length) return [];
+        const meses = [...mesesRestrito].sort((a, b) => a - b);
+        const ranges = [];
+        let ini = meses[0], ult = meses[0];
+        for (let i = 1; i < meses.length; i++) {
+            if (meses[i] === ult + 1) { ult = meses[i]; }
+            else { ranges.push({ inicio: ini, fim: ult }); ini = meses[i]; ult = meses[i]; }
+        }
+        ranges.push({ inicio: ini, fim: ult });
+        return ranges;
+    }
+
+    function calcularTempoParadaData(rioSel, proj) {
+        const anoAtual = new Date().getFullYear();
+        const resultados = [];
+        const CENARIOS_BASE = [
+            { id: 'pessimista', nome: 'Pessimista', cor: '#ef4444' },
+            { id: 'medio',      nome: 'Médio',      cor: '#3b82f6' },
+            { id: 'otimista',   nome: 'Otimista',   cor: '#10b981' },
+        ];
+        const cenariosCustom = (variaveis.cenariosCustom || []).map(c => ({ id: c.id, nome: c.nome, cor: c.cor }));
+        const CENARIOS = [...CENARIOS_BASE, ...cenariosCustom];
+
+        function getNivelCenario(cen, idx) {
+            if (cen.id === 'pessimista') return proj.pessimista[idx];
+            if (cen.id === 'medio')      return proj.medio[idx];
+            if (cen.id === 'otimista')   return proj.otimista[idx];
+            return (proj.custom[cen.id] || [])[idx];
+        }
+
+        const empAtivos  = empurradores.filter(e => e.ativo !== false);
+        const barcAtivas = barcacas.filter(b => b.ativo !== false);
+
+        CENARIOS.forEach(cen => {
+            const v = getVariaveisCenario(cen.id);
+
+            // — Empurradores: param quando nivel < caladoMin - abaco + faq
+            empAtivos.forEach(emp => {
+                const nivelMin = emp.caladoMin - v.abaco + v.faq;
+                const mesesRestrito = [];
+                proj.mesesIdx.forEach((mes, i) => {
+                    const nivel = getNivelCenario(cen, i);
+                    if (nivel !== null && nivel !== undefined && nivel < nivelMin) mesesRestrito.push(mes);
+                });
+                if (!mesesRestrito.length) return;
+                encontrarRangesConsecutivos(mesesRestrito).forEach(range => {
+                    const inicio = new Date(anoAtual, range.inicio, 1);
+                    const fim    = new Date(anoAtual, range.fim + 1, 0);
+                    const dias   = Math.ceil((fim - inicio) / 86400000) + 1;
+                    resultados.push({
+                        label: `${cen.nome} · ${emp.nome}`,
+                        tipo: 'Empurrador', cenario: cen.nome, cenarioId: cen.id,
+                        nome: emp.nome, cor: cen.cor, inicio, fim, dias, nivelMin
+                    });
+                });
+            });
+
+            // — Barcaças: reduzem calado antes de parar completamente
+            barcAtivas.forEach(barc => {
+                const nivelMinStop  = barc.caladoMin - v.abaco + v.faq;
+                const nivelMinReduz = barc.caladoMax ? (barc.caladoMax - v.abaco + v.faq) : nivelMinStop;
+
+                // Parada completa
+                const mesesStop = [];
+                proj.mesesIdx.forEach((mes, i) => {
+                    const nivel = getNivelCenario(cen, i);
+                    if (nivel !== null && nivel !== undefined && nivel < nivelMinStop) mesesStop.push(mes);
+                });
+                if (mesesStop.length) {
+                    encontrarRangesConsecutivos(mesesStop).forEach(range => {
+                        const inicio = new Date(anoAtual, range.inicio, 1);
+                        const fim    = new Date(anoAtual, range.fim + 1, 0);
+                        const dias   = Math.ceil((fim - inicio) / 86400000) + 1;
+                        resultados.push({
+                            label: `${cen.nome} · ${barc.nome} (parado)`,
+                            tipo: 'Barcaça (parado)', cenario: cen.nome, cenarioId: cen.id,
+                            nome: barc.nome, cor: cen.cor, inicio, fim, dias, nivelMin: nivelMinStop
+                        });
+                    });
+                }
+
+                // Redução de calado (opera abaixo do calado máximo)
+                if (barc.caladoMax && nivelMinReduz > nivelMinStop + 0.01) {
+                    const mesesReduz = [];
+                    proj.mesesIdx.forEach((mes, i) => {
+                        const nivel = getNivelCenario(cen, i);
+                        if (nivel !== null && nivel !== undefined && nivel >= nivelMinStop && nivel < nivelMinReduz) mesesReduz.push(mes);
+                    });
+                    if (mesesReduz.length) {
+                        encontrarRangesConsecutivos(mesesReduz).forEach(range => {
+                            const inicio = new Date(anoAtual, range.inicio, 1);
+                            const fim    = new Date(anoAtual, range.fim + 1, 0);
+                            const dias   = Math.ceil((fim - inicio) / 86400000) + 1;
+                            resultados.push({
+                                label: `${cen.nome} · ${barc.nome} (reduz calado)`,
+                                tipo: 'Barcaça (reduz calado)', cenario: cen.nome, cenarioId: cen.id,
+                                nome: barc.nome, cor: cen.cor + '99', inicio, fim, dias, nivelMin: nivelMinReduz
+                            });
+                        });
+                    }
+                }
+            });
+        });
+
+        return resultados;
+    }
+
+    function formatDateBR(date) {
+        if (!(date instanceof Date)) return '';
+        return `${String(date.getDate()).padStart(2,'0')}/${String(date.getMonth()+1).padStart(2,'0')}/${date.getFullYear()}`;
+    }
+    function formatDateShort(date) {
+        if (!(date instanceof Date)) return '';
+        return `${String(date.getDate()).padStart(2,'0')}/${String(date.getMonth()+1).padStart(2,'0')}`;
+    }
+
+    function renderFiltrosTempoParada(dados) {
+        const container = document.getElementById('filtrosTempoParada');
+        if (!container) return;
+        const keys = [...new Set(dados.map(d => d.cenarioId + '_' + d.nome))];
+        const map = {};
+        dados.forEach(d => { if (!map[d.cenarioId + '_' + d.nome]) map[d.cenarioId + '_' + d.nome] = d; });
+        container.innerHTML = keys.map(key => {
+            const d = map[key];
+            const visivel = ativosTempoParadaVisiveis[key] !== false;
+            const corBase = d.cor.length > 7 ? d.cor.substring(0, 7) : d.cor;
+            const style   = visivel ? `background:${corBase};border-color:${corBase};color:white` : '';
+            const cls     = visivel ? '' : 'bg-gray-100 border-gray-300 text-gray-400';
+            return `<button onclick="toggleAtivoTempoParada('${key}')"
+                class="text-xs px-2 py-0.5 rounded-full border font-medium cursor-pointer transition-all ${cls}" style="${style}">${d.cenario} · ${d.nome}</button>`;
+        }).join('');
+    }
+
+    function toggleAtivoTempoParada(key) {
+        ativosTempoParadaVisiveis[key] = ativosTempoParadaVisiveis[key] !== false ? false : true;
+        const filtro = document.getElementById('filtroRio').value;
+        const rios   = [...new Set(dadosRios.map(r => r.nome))];
+        const rioSel = filtro || rios[0];
+        const proj   = calcularProjecaoRio(rioSel);
+        if (proj) renderTempoParada(rioSel, proj);
+    }
+
+    function renderTempoParada(rioSel, proj) {
+        const card = document.getElementById('cardTempoParada');
+        if (!card) return;
+        const empAtivos  = empurradores.filter(e => e.ativo !== false);
+        const barcAtivas = barcacas.filter(b => b.ativo !== false);
+        if (!proj || (!empAtivos.length && !barcAtivas.length)) { card.style.display = 'none'; return; }
+
+        const dados = calcularTempoParadaData(rioSel, proj);
+        if (!dados.length) { card.style.display = 'none'; return; }
+        card.style.display = '';
+
+        renderFiltrosTempoParada(dados);
+
+        const dadosFiltrados = dados.filter(d => ativosTempoParadaVisiveis[d.cenarioId + '_' + d.nome] !== false);
+
+        // ── Gráfico Gantt (barra horizontal flutuante) ──
+        const ctx = document.getElementById('chartTempoParada').getContext('2d');
+        if (chartTempoParada) chartTempoParada.destroy();
+
+        const altura = Math.max(160, dadosFiltrados.length * 38 + 70);
+        const contEl = document.getElementById('containerChartTempoParada');
+        if (contEl) contEl.style.height = altura + 'px';
+
+        if (dadosFiltrados.length) {
+            const labels   = dadosFiltrados.map(d => d.label);
+            const datasPts = dadosFiltrados.map(d => [d.inicio.getTime(), d.fim.getTime()]);
+            const bgCols   = dadosFiltrados.map(d => {
+                const base = d.cor.length > 7 ? d.cor.substring(0, 7) : d.cor;
+                return base + 'cc';
+            });
+            const bdCols   = dadosFiltrados.map(d => d.cor.length > 7 ? d.cor.substring(0, 7) : d.cor);
+
+            const dadosFiltRef = dadosFiltrados; // closure ref for plugin
+            chartTempoParada = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{ label: 'Restrição', data: datasPts, backgroundColor: bgCols, borderColor: bdCols, borderWidth: 1, borderSkipped: false }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                title: items => items[0]?.label || '',
+                                label: c => {
+                                    const d = dadosFiltRef[c.dataIndex];
+                                    return ` ${formatDateBR(d.inicio)} → ${formatDateBR(d.fim)} · ${d.dias} dia${d.dias !== 1 ? 's' : ''}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            ticks: {
+                                maxTicksLimit: 13,
+                                callback: v => {
+                                    const d = new Date(v);
+                                    if (isNaN(d.getTime())) return '';
+                                    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
+                                }
+                            },
+                            grid: { color: '#f3f4f6' }
+                        },
+                        y: { grid: { display: false } }
+                    }
+                },
+                plugins: [{
+                    id: 'diasLabel',
+                    afterDatasetsDraw(chart) {
+                        const ctx2 = chart.ctx;
+                        const meta = chart.getDatasetMeta(0);
+                        dadosFiltRef.forEach((d, i) => {
+                            const bar = meta.data[i];
+                            if (!bar || bar.width < 22) return;
+                            const text = String(d.dias);
+                            ctx2.save();
+                            ctx2.fillStyle = 'white';
+                            ctx2.font = 'bold 11px Inter, sans-serif';
+                            ctx2.textAlign = 'center';
+                            ctx2.textBaseline = 'middle';
+                            ctx2.fillText(text, bar.x - bar.width / 2 + bar.width / 2, bar.y);
+                            ctx2.restore();
+                        });
+                    }
+                }]
+            });
+        }
+
+        // ── Tabela de detalhes ──
+        const tbody = document.getElementById('tbodyTempoParada');
+        if (tbody) {
+            tbody.innerHTML = dadosFiltrados.length
+                ? dadosFiltrados.map(d => {
+                    const corBase = d.cor.length > 7 ? d.cor.substring(0, 7) : d.cor;
+                    const retoma  = new Date(d.fim.getTime() + 86400000);
+                    return `<tr>
+                        <td><span class="badge" style="background:${corBase}22;color:${corBase};border:1px solid ${corBase}44">${d.cenario}</span></td>
+                        <td class="text-xs text-gray-600">${d.tipo}</td>
+                        <td class="font-medium">${d.nome}</td>
+                        <td>${formatDateShort(d.inicio)}</td>
+                        <td>${formatDateShort(retoma)}</td>
+                        <td class="font-bold text-orange-600">${d.dias}</td>
+                    </tr>`;
+                }).join('')
+                : '<tr><td colspan="6" class="text-center text-gray-400 py-4">Nenhuma restrição projetada para os ativos visíveis.</td></tr>';
+        }
+        lucide.createIcons();
+    }
+
+    // ==========================================================================
 
     function exportarProjecaoCSV() {
         const filtro = document.getElementById('filtroRio').value;
@@ -3323,10 +3699,11 @@
         };
     }
 
-    function renderPulmaoDashboard(rotasDoCenario, mesesDashboard, capsAjust) {
+    function renderPulmaoDashboard(rotasDoCenario, mesesDashboard, capsAjust, ano) {
         const tbody = document.getElementById('tbodyPulmaoDashboard');
         if (!tbody) return;
         tbody.innerHTML = '';
+        _pulmaoCache = [];
 
         const rotasPulmao = rotasDoCenario.filter(r => r.destinoIsPulmao);
         if (rotasPulmao.length === 0) {
@@ -3340,9 +3717,9 @@
             mesesDashboard.forEach(mes => {
                 if (!rotaAtivaNoMes(rota, mes)) return;
 
-                const envOt = capsAjust[`${mes}_otimista`]?.[rota.id]?.total || 0;
-                const envMe = capsAjust[`${mes}_medio`]?.[rota.id]?.total || 0;
-                const envPe = capsAjust[`${mes}_pessimista`]?.[rota.id]?.total || 0;
+                const capOt = capsAjust[`${mes}_otimista`]?.[rota.id]   || { total: 0, detalhes: [] };
+                const capMe = capsAjust[`${mes}_medio`]?.[rota.id]      || { total: 0, detalhes: [] };
+                const capPe = capsAjust[`${mes}_pessimista`]?.[rota.id] || { total: 0, detalhes: [] };
 
                 const rotasConsumidoras = rotasDoCenario.filter(r =>
                     r.origemIsPulmao &&
@@ -3350,16 +3727,21 @@
                     rotaAtivaNoMes(r, mes)
                 );
                 const consMe = rotasConsumidoras.reduce((s, r) => s + (capsAjust[`${mes}_medio`]?.[r.id]?.total || 0), 0);
-                const saldoMe = envMe - consMe;
+                const saldoMe = capMe.total - consMe;
+
+                const idx = _pulmaoCache.length;
+                _pulmaoCache.push({ rota, nomePulmao, mes, ano, capOt, capMe, capPe, consMe, saldoMe, rotasConsumidoras });
 
                 const tr = document.createElement('tr');
+                tr.className = 'cursor-pointer';
+                tr.onclick = () => abrirDetalhePulmao(idx);
                 tr.innerHTML = `
                     <td class="font-medium">${rota.nome}</td>
                     <td>${nomePulmao}</td>
                     <td>${MESES_FULL[mes]}</td>
-                    <td class="scenario-optimistic font-medium">${Math.round(envOt).toLocaleString('pt-BR')}</td>
-                    <td class="scenario-medium font-medium">${Math.round(envMe).toLocaleString('pt-BR')}</td>
-                    <td class="scenario-pessimistic font-medium">${Math.round(envPe).toLocaleString('pt-BR')}</td>
+                    <td class="scenario-optimistic font-medium">${Math.round(capOt.total).toLocaleString('pt-BR')}</td>
+                    <td class="scenario-medium font-medium">${Math.round(capMe.total).toLocaleString('pt-BR')}</td>
+                    <td class="scenario-pessimistic font-medium">${Math.round(capPe.total).toLocaleString('pt-BR')}</td>
                     <td class="font-medium">${Math.round(consMe).toLocaleString('pt-BR')}</td>
                     <td class="${saldoMe < 0 ? 'text-red-600 font-bold' : 'text-gray-700'}">${Math.round(saldoMe).toLocaleString('pt-BR')}</td>`;
                 tbody.appendChild(tr);
@@ -3370,6 +3752,90 @@
         if (!linhas) {
             tbody.innerHTML = '<tr><td colspan="8" class="text-center text-gray-400 py-4">Nenhum movimento de pulmão no período selecionado.</td></tr>';
         }
+    }
+
+    function abrirDetalhePulmao(idx) {
+        const d = _pulmaoCache[idx];
+        if (!d) return;
+
+        document.getElementById('tituloDetalhe').textContent = `${d.rota.nome} → ${d.nomePulmao} — ${MESES_FULL[d.mes]}/${d.ano}`;
+        const body = document.getElementById('detalheBody');
+
+        const cenarios = [
+            { nome: 'Otimista',   classe: 'text-green-600 border-green-500', cap: d.capOt, cen: 'otimista'   },
+            { nome: 'Médio',      classe: 'text-blue-600 border-blue-500',   cap: d.capMe, cen: 'medio'      },
+            { nome: 'Pessimista', classe: 'text-red-600 border-red-500',     cap: d.capPe, cen: 'pessimista' }
+        ];
+
+        const resumo = cenarios.map(c => {
+            const v = getVariaveisCenario(c.cen);
+            const nivel = getNivelRioCenarioAnoMes(d.rota.rio, d.ano, d.mes, c.cen);
+            const caladoOp = nivel != null ? (nivel + v.abaco - v.faq).toFixed(2) : '—';
+            const nivelStr = nivel != null ? nivel.toFixed(2) : '—';
+            const empRows = c.cap.detalhes.map(det => {
+                if (det.viagens < 0.001) {
+                    return `<tr class="bg-red-50">
+                        <td class="font-medium">${det.emp?.nome || '-'}</td>
+                        <td colspan="3" class="text-red-600 text-xs">${det.motivo || 'Inviável'}</td>
+                    </tr>`;
+                }
+                const compRows = (det.composicaoDetalhada || []).map(comp => `
+                    <tr class="text-xs bg-gray-50">
+                        <td class="pl-4 text-gray-500">↳ ${comp.tipo?.nome || '?'}
+                            ${comp.tipo ? `<span class="text-gray-400 ml-1">mín. ${comp.tipo.caladoMin.toFixed(2)} m</span>` : ''}
+                            ${comp.navega ? `<span class="text-blue-500 ml-1">→ ${comp.caladoAdotado.toFixed(2)} m</span>` : ''}
+                        </td>
+                        <td class="text-center">${comp.quantidade}</td>
+                        <td>${comp.navega ? Math.round(comp.volUnit).toLocaleString('pt-BR') + ' t/barc.' : '<span class="text-red-500">Não navega</span>'}</td>
+                        <td class="font-medium">${comp.navega ? Math.round(comp.volSubtotal).toLocaleString('pt-BR') + ' t' : '-'}</td>
+                    </tr>`).join('');
+                return `<tr class="font-medium bg-white">
+                    <td>${det.emp?.nome || '-'}
+                        <span class="text-xs font-normal text-gray-400 ml-1">cal. mín. ${det.emp?.caladoMin?.toFixed(2) || '?'} m</span>
+                    </td>
+                    <td class="text-center">${det.viagens.toFixed(1)}</td>
+                    <td class="font-bold">${Math.round(det.volumePorViagem || 0).toLocaleString('pt-BR')} t</td>
+                    <td class="font-bold text-green-700">${Math.round(det.volumeTotal).toLocaleString('pt-BR')} t</td>
+                </tr>${compRows}`;
+            }).join('');
+
+            return `<div class="border-l-4 ${c.classe} pl-3 py-2 rounded-r">
+                <div class="flex justify-between items-center mb-2 flex-wrap gap-1">
+                    <h4 class="font-semibold ${c.classe.split(' ')[0]}">${c.nome}</h4>
+                    <div class="text-xs text-gray-600">
+                        Nível rio: <b>${nivelStr} m</b>
+                        · Cal. op.: <b>${caladoOp} m</b>
+                        · Envio: <b>${Math.round(c.cap.total).toLocaleString('pt-BR')} t</b>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead><tr><th>Empurrador / Composição</th><th>Viagens</th><th>Vol/viagem</th><th>Vol total</th></tr></thead>
+                        <tbody>${empRows || '<tr><td colspan="4" class="text-gray-400 py-2">Sem empurradores alocados</td></tr>'}</tbody>
+                    </table>
+                </div>
+            </div>`;
+        }).join('');
+
+        const saldoCls = d.saldoMe < 0 ? 'text-red-600' : 'text-green-600';
+        body.innerHTML = `
+            <div class="grid-3 mb-4">
+                <div class="card p-3 border-l-4 border-blue-400">
+                    <p class="text-xs text-gray-500">Envio Médio</p>
+                    <p class="text-xl font-bold text-blue-600">${Math.round(d.capMe.total).toLocaleString('pt-BR')} t</p>
+                </div>
+                <div class="card p-3 border-l-4 border-gray-400">
+                    <p class="text-xs text-gray-500">Consumo a jusante</p>
+                    <p class="text-xl font-bold text-gray-700">${Math.round(d.consMe).toLocaleString('pt-BR')} t</p>
+                </div>
+                <div class="card p-3 border-l-4 ${d.saldoMe < 0 ? 'border-red-400' : 'border-green-400'}">
+                    <p class="text-xs text-gray-500">Saldo Médio</p>
+                    <p class="text-xl font-bold ${saldoCls}">${Math.round(d.saldoMe).toLocaleString('pt-BR')} t</p>
+                </div>
+            </div>
+            <div class="space-y-3">${resumo}</div>`;
+
+        document.getElementById('modalDetalhe').classList.add('active');
     }
 
     function updateDashboard() {
@@ -3568,7 +4034,7 @@
         document.getElementById('resumoPessimista').textContent = Math.round(totPe).toLocaleString('pt-BR') + ' t';
         document.getElementById('resumoMeta').textContent       = Math.round(totMeta).toLocaleString('pt-BR') + ' t';
 
-        renderPulmaoDashboard(rotasDoCenario, mesesDashboard, capsAjust);
+        renderPulmaoDashboard(rotasDoCenario, mesesDashboard, capsAjust, ano);
         renderAlertas(alertas, conflitosLista);
         renderChartDashboard(chartData);
         renderChartComparativoCenarios(ano, mesesDashboard);
