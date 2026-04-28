@@ -272,10 +272,33 @@
                         <i data-lucide="timer-off" class="w-5 h-5 text-orange-500"></i>
                         Tempo de Parada das Embarcações
                     </h2>
-                    <span class="text-xs text-gray-500">Períodos em que o nível projetado impede ou restringe a navegação</span>
+                    <span class="text-xs text-gray-500">Estimativa em dias corridos com interpolação diária</span>
                 </div>
-                <!-- Filtros / pills de ativos -->
-                <div id="filtrosTempoParada" class="flex gap-2 flex-wrap mb-4"></div>
+                <!-- Controles: dropdown de ativos + botões de cenário -->
+                <div class="flex flex-wrap items-center gap-3 mb-4">
+                    <!-- Dropdown de Ativos -->
+                    <div class="relative" id="tpDropdownContainer">
+                        <button onclick="toggleTpDropdown(event)"
+                            class="btn-secondary text-xs flex items-center gap-1.5 py-1 px-3">
+                            <i data-lucide="ship" class="w-3 h-3"></i>
+                            Ativos
+                            <i data-lucide="chevron-down" class="w-3 h-3"></i>
+                        </button>
+                        <div id="tpDropdown"
+                            class="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl p-3 z-50"
+                            style="display:none;min-width:220px">
+                            <div class="flex justify-between mb-2 pb-1 border-b border-gray-100">
+                                <button onclick="tpSelectAllVessels()" class="text-xs text-blue-600 hover:underline">Selecionar todos</button>
+                                <button onclick="tpClearAllVessels()" class="text-xs text-gray-400 hover:text-gray-600 hover:underline">Limpar</button>
+                            </div>
+                            <div id="tpDropdownList" class="space-y-1.5 max-h-52 overflow-y-auto"></div>
+                        </div>
+                    </div>
+                    <!-- Divisor -->
+                    <span class="text-gray-200 hidden sm:block">|</span>
+                    <!-- Botões de cenário -->
+                    <div class="flex gap-1 flex-wrap" id="tpCenariosBtns"></div>
+                </div>
                 <!-- Gráfico de Gantt horizontal -->
                 <div id="containerChartTempoParada" style="position:relative;height:280px;width:100%">
                     <canvas id="chartTempoParada"></canvas>
@@ -290,13 +313,15 @@
                                 <th>Embarcação</th>
                                 <th>Início Restrição</th>
                                 <th>Retoma</th>
-                                <th>Dias</th>
+                                <th>Dias corridos</th>
                             </tr>
                         </thead>
                         <tbody id="tbodyTempoParada"></tbody>
                     </table>
                 </div>
-                <p class="text-xs text-gray-400 mt-2">Cálculo baseado em nível projetado mensal. Clique nas pílulas acima para filtrar ativos.</p>
+                <p class="text-xs text-gray-400 mt-2">
+                    Histórico: interpolação entre medições reais diárias. Projeção: interpolação linear entre médias mensais (âncora no dia 15 de cada mês).
+                </p>
             </div>
         </div>
 
@@ -1011,7 +1036,9 @@
     let _detalhesMesCache = []; // cache para o modal de detalhes do mês
     let dashCenariosVisiveis = {}; // id -> bool; ausente = visível
     let anosHistoricoSelecionados = new Set(); // anos a sobrepor no gráfico de rio
-    let ativosTempoParadaVisiveis = {}; // key -> bool; ausente = visível
+    let ativosTempoParadaVisiveis = {}; // kept for compat – not used after refactor
+    let tpVesselsHidden  = new Set(); // vessel names hidden in Tempo de Parada
+    let tpCenariosHidden = new Set(); // scenario IDs hidden in Tempo de Parada
     let _pulmaoCache = []; // cache de dados de pulmão para o modal de detalhes
     let chartTempoParada = null;
 
@@ -1975,116 +2002,8 @@
     }
 
     // ==========================================================================
-    // TEMPO DE PARADA — projeção de restrições por embarcação
+    // TEMPO DE PARADA — restrições operacionais por embarcação (precisão diária)
     // ==========================================================================
-
-    function encontrarRangesConsecutivos(mesesRestrito) {
-        if (!mesesRestrito.length) return [];
-        const meses = [...mesesRestrito].sort((a, b) => a - b);
-        const ranges = [];
-        let ini = meses[0], ult = meses[0];
-        for (let i = 1; i < meses.length; i++) {
-            if (meses[i] === ult + 1) { ult = meses[i]; }
-            else { ranges.push({ inicio: ini, fim: ult }); ini = meses[i]; ult = meses[i]; }
-        }
-        ranges.push({ inicio: ini, fim: ult });
-        return ranges;
-    }
-
-    function calcularTempoParadaData(rioSel, proj) {
-        const anoAtual = new Date().getFullYear();
-        const resultados = [];
-        const CENARIOS_BASE = [
-            { id: 'pessimista', nome: 'Pessimista', cor: '#ef4444' },
-            { id: 'medio',      nome: 'Médio',      cor: '#3b82f6' },
-            { id: 'otimista',   nome: 'Otimista',   cor: '#10b981' },
-        ];
-        const cenariosCustom = (variaveis.cenariosCustom || []).map(c => ({ id: c.id, nome: c.nome, cor: c.cor }));
-        const CENARIOS = [...CENARIOS_BASE, ...cenariosCustom];
-
-        function getNivelCenario(cen, idx) {
-            if (cen.id === 'pessimista') return proj.pessimista[idx];
-            if (cen.id === 'medio')      return proj.medio[idx];
-            if (cen.id === 'otimista')   return proj.otimista[idx];
-            return (proj.custom[cen.id] || [])[idx];
-        }
-
-        const empAtivos  = empurradores.filter(e => e.ativo !== false);
-        const barcAtivas = barcacas.filter(b => b.ativo !== false);
-
-        CENARIOS.forEach(cen => {
-            const v = getVariaveisCenario(cen.id);
-
-            // — Empurradores: param quando nivel < caladoMin - abaco + faq
-            empAtivos.forEach(emp => {
-                const nivelMin = emp.caladoMin - v.abaco + v.faq;
-                const mesesRestrito = [];
-                proj.mesesIdx.forEach((mes, i) => {
-                    const nivel = getNivelCenario(cen, i);
-                    if (nivel !== null && nivel !== undefined && nivel < nivelMin) mesesRestrito.push(mes);
-                });
-                if (!mesesRestrito.length) return;
-                encontrarRangesConsecutivos(mesesRestrito).forEach(range => {
-                    const inicio = new Date(anoAtual, range.inicio, 1);
-                    const fim    = new Date(anoAtual, range.fim + 1, 0);
-                    const dias   = Math.ceil((fim - inicio) / 86400000) + 1;
-                    resultados.push({
-                        label: `${cen.nome} · ${emp.nome}`,
-                        tipo: 'Empurrador', cenario: cen.nome, cenarioId: cen.id,
-                        nome: emp.nome, cor: cen.cor, inicio, fim, dias, nivelMin
-                    });
-                });
-            });
-
-            // — Barcaças: reduzem calado antes de parar completamente
-            barcAtivas.forEach(barc => {
-                const nivelMinStop  = barc.caladoMin - v.abaco + v.faq;
-                const nivelMinReduz = barc.caladoMax ? (barc.caladoMax - v.abaco + v.faq) : nivelMinStop;
-
-                // Parada completa
-                const mesesStop = [];
-                proj.mesesIdx.forEach((mes, i) => {
-                    const nivel = getNivelCenario(cen, i);
-                    if (nivel !== null && nivel !== undefined && nivel < nivelMinStop) mesesStop.push(mes);
-                });
-                if (mesesStop.length) {
-                    encontrarRangesConsecutivos(mesesStop).forEach(range => {
-                        const inicio = new Date(anoAtual, range.inicio, 1);
-                        const fim    = new Date(anoAtual, range.fim + 1, 0);
-                        const dias   = Math.ceil((fim - inicio) / 86400000) + 1;
-                        resultados.push({
-                            label: `${cen.nome} · ${barc.nome} (parado)`,
-                            tipo: 'Barcaça (parado)', cenario: cen.nome, cenarioId: cen.id,
-                            nome: barc.nome, cor: cen.cor, inicio, fim, dias, nivelMin: nivelMinStop
-                        });
-                    });
-                }
-
-                // Redução de calado (opera abaixo do calado máximo)
-                if (barc.caladoMax && nivelMinReduz > nivelMinStop + 0.01) {
-                    const mesesReduz = [];
-                    proj.mesesIdx.forEach((mes, i) => {
-                        const nivel = getNivelCenario(cen, i);
-                        if (nivel !== null && nivel !== undefined && nivel >= nivelMinStop && nivel < nivelMinReduz) mesesReduz.push(mes);
-                    });
-                    if (mesesReduz.length) {
-                        encontrarRangesConsecutivos(mesesReduz).forEach(range => {
-                            const inicio = new Date(anoAtual, range.inicio, 1);
-                            const fim    = new Date(anoAtual, range.fim + 1, 0);
-                            const dias   = Math.ceil((fim - inicio) / 86400000) + 1;
-                            resultados.push({
-                                label: `${cen.nome} · ${barc.nome} (reduz calado)`,
-                                tipo: 'Barcaça (reduz calado)', cenario: cen.nome, cenarioId: cen.id,
-                                nome: barc.nome, cor: cen.cor + '99', inicio, fim, dias, nivelMin: nivelMinReduz
-                            });
-                        });
-                    }
-                }
-            });
-        });
-
-        return resultados;
-    }
 
     function formatDateBR(date) {
         if (!(date instanceof Date)) return '';
@@ -2095,30 +2014,230 @@
         return `${String(date.getDate()).padStart(2,'0')}/${String(date.getMonth()+1).padStart(2,'0')}`;
     }
 
-    function renderFiltrosTempoParada(dados) {
-        const container = document.getElementById('filtrosTempoParada');
-        if (!container) return;
-        const keys = [...new Set(dados.map(d => d.cenarioId + '_' + d.nome))];
-        const map = {};
-        dados.forEach(d => { if (!map[d.cenarioId + '_' + d.nome]) map[d.cenarioId + '_' + d.nome] = d; });
-        container.innerHTML = keys.map(key => {
-            const d = map[key];
-            const visivel = ativosTempoParadaVisiveis[key] !== false;
-            const corBase = d.cor.length > 7 ? d.cor.substring(0, 7) : d.cor;
-            const style   = visivel ? `background:${corBase};border-color:${corBase};color:white` : '';
-            const cls     = visivel ? '' : 'bg-gray-100 border-gray-300 text-gray-400';
-            return `<button onclick="toggleAtivoTempoParada('${key}')"
-                class="text-xs px-2 py-0.5 rounded-full border font-medium cursor-pointer transition-all ${cls}" style="${style}">${d.cenario} · ${d.nome}</button>`;
-        }).join('');
+    // Gera série diária de nível do rio: dados reais (histórico) + interpolação linear (projeção)
+    function gerarSerieDiariaRio(rioSel, cenario, proj) {
+        const anoAtual = new Date().getFullYear();
+
+        // Medições reais do ano atual agrupadas por data (média diária)
+        const porData = {};
+        dadosRios
+            .filter(r => r.nome === rioSel)
+            .forEach(r => {
+                const d = new Date(r.data + 'T12:00:00');
+                if (d.getFullYear() !== anoAtual || isNaN(d.getTime())) return;
+                const k = r.data.substring(0, 10);
+                if (!porData[k]) porData[k] = [];
+                porData[k].push(r.nivel);
+            });
+
+        // Converte para âncoras com timestamps
+        const anchors = Object.entries(porData)
+            .map(([k, vals]) => ({ ms: new Date(k + 'T12:00:00').getTime(), nivel: vals.reduce((a,b) => a+b, 0) / vals.length }))
+            .sort((a, b) => a.ms - b.ms);
+
+        // Âncoras de projeção mensal (dia 15 de cada mês futuro)
+        const lastHistMs = anchors.length ? anchors[anchors.length - 1].ms : 0;
+        proj.mesesIdx.forEach((mes, i) => {
+            let nivel;
+            if (cenario === 'pessimista') nivel = proj.pessimista[i];
+            else if (cenario === 'medio') nivel = proj.medio[i];
+            else if (cenario === 'otimista') nivel = proj.otimista[i];
+            else nivel = (proj.custom[cenario] || [])[i];
+            if (nivel === null || nivel === undefined) return;
+            const ms = new Date(anoAtual, mes, 15, 12).getTime();
+            if (ms > lastHistMs) anchors.push({ ms, nivel });
+        });
+        anchors.sort((a, b) => a.ms - b.ms);
+        if (anchors.length < 1) return [];
+
+        // Interpola para cada dia do ano
+        const serie = [];
+        for (let m = 0; m < 12; m++) {
+            const diasMes = new Date(anoAtual, m + 1, 0).getDate();
+            for (let d = 1; d <= diasMes; d++) {
+                const ms = new Date(anoAtual, m, d, 12).getTime();
+                let prev = null, next = null;
+                for (let j = anchors.length - 1; j >= 0; j--) { if (anchors[j].ms <= ms) { prev = anchors[j]; break; } }
+                for (let j = 0; j < anchors.length; j++)       { if (anchors[j].ms  > ms) { next = anchors[j]; break; } }
+                if (!prev && !next) continue;
+                let nivel;
+                if (!prev) nivel = next.nivel;
+                else if (!next) nivel = prev.nivel;
+                else nivel = prev.nivel + (ms - prev.ms) / (next.ms - prev.ms) * (next.nivel - prev.nivel);
+                serie.push({ date: new Date(anoAtual, m, d), nivel: Math.max(0, nivel) });
+            }
+        }
+        return serie;
     }
 
-    function toggleAtivoTempoParada(key) {
-        ativosTempoParadaVisiveis[key] = ativosTempoParadaVisiveis[key] !== false ? false : true;
+    // Encontra períodos contíguos onde nivel < nivelMin e retorna {inicio, fim, dias}
+    function encontrarPeriodosRestricao(serie, nivelMin) {
+        const periodos = [];
+        let ini = null;
+        for (let i = 0; i < serie.length; i++) {
+            const { date, nivel } = serie[i];
+            if (nivel < nivelMin && ini === null) {
+                ini = new Date(date);
+            } else if (nivel >= nivelMin && ini !== null) {
+                const fim  = new Date(serie[i - 1].date);
+                const dias = Math.round((fim - ini) / 86400000) + 1;
+                if (dias > 0) periodos.push({ inicio: ini, fim, dias });
+                ini = null;
+            }
+        }
+        if (ini !== null) {
+            const fim  = new Date(serie[serie.length - 1].date);
+            const dias = Math.round((fim - ini) / 86400000) + 1;
+            if (dias > 0) periodos.push({ inicio: ini, fim, dias });
+        }
+        return periodos;
+    }
+
+    function calcularTempoParadaData(rioSel, proj) {
+        const resultados = [];
+        const CENARIOS_BASE = [
+            { id: 'pessimista', nome: 'Pessimista', cor: '#ef4444' },
+            { id: 'medio',      nome: 'Médio',      cor: '#3b82f6' },
+            { id: 'otimista',   nome: 'Otimista',   cor: '#10b981' },
+        ];
+        const cenariosCustom = (variaveis.cenariosCustom || []).map(c => ({ id: c.id, nome: c.nome, cor: c.cor }));
+        const CENARIOS = [...CENARIOS_BASE, ...cenariosCustom];
+
+        const empAtivos  = empurradores.filter(e => e.ativo !== false);
+        const barcAtivas = barcacas.filter(b => b.ativo !== false);
+
+        CENARIOS.forEach(cen => {
+            const v = getVariaveisCenario(cen.id);
+            const serie = gerarSerieDiariaRio(rioSel, cen.id, proj);
+            if (!serie.length) return;
+
+            empAtivos.forEach(emp => {
+                const nivelMin = emp.caladoMin - v.abaco + v.faq;
+                encontrarPeriodosRestricao(serie, nivelMin).forEach(p => {
+                    resultados.push({
+                        label: `${cen.nome} · ${emp.nome}`,
+                        tipo: 'Empurrador', cenario: cen.nome, cenarioId: cen.id,
+                        nome: emp.nome, cor: cen.cor,
+                        inicio: p.inicio, fim: p.fim, dias: p.dias, nivelMin
+                    });
+                });
+            });
+
+            barcAtivas.forEach(barc => {
+                const nivelMinStop  = barc.caladoMin - v.abaco + v.faq;
+                const nivelMinReduz = barc.caladoMax ? (barc.caladoMax - v.abaco + v.faq) : nivelMinStop;
+
+                encontrarPeriodosRestricao(serie, nivelMinStop).forEach(p => {
+                    resultados.push({
+                        label: `${cen.nome} · ${barc.nome} (parado)`,
+                        tipo: 'Barcaça (parado)', cenario: cen.nome, cenarioId: cen.id,
+                        nome: barc.nome, cor: cen.cor,
+                        inicio: p.inicio, fim: p.fim, dias: p.dias, nivelMin: nivelMinStop
+                    });
+                });
+
+                if (barc.caladoMax && nivelMinReduz > nivelMinStop + 0.01) {
+                    // Períodos onde apenas reduz calado (above stop, below max)
+                    const serieReduz = serie.map(s => ({
+                        date: s.date,
+                        nivel: s.nivel < nivelMinStop ? nivelMinReduz : s.nivel // mask full-stop periods
+                    }));
+                    encontrarPeriodosRestricao(serieReduz, nivelMinReduz).forEach(p => {
+                        resultados.push({
+                            label: `${cen.nome} · ${barc.nome} (reduz calado)`,
+                            tipo: 'Barcaça (reduz calado)', cenario: cen.nome, cenarioId: cen.id,
+                            nome: barc.nome, cor: cen.cor + '99',
+                            inicio: p.inicio, fim: p.fim, dias: p.dias, nivelMin: nivelMinReduz
+                        });
+                    });
+                }
+            });
+        });
+
+        return resultados;
+    }
+
+    // ── Controles de filtro ──
+
+    function _tpGetAllVessels() {
+        return [
+            ...empurradores.filter(e => e.ativo !== false).map(e => ({ nome: e.nome, tipo: 'Empurrador' })),
+            ...barcacas.filter(b => b.ativo !== false).map(b => ({ nome: b.nome, tipo: 'Barcaça' }))
+        ];
+    }
+
+    function _tpGetAllCenarios() {
+        return [
+            { id: 'pessimista', nome: 'Pessimista', cor: '#ef4444' },
+            { id: 'medio',      nome: 'Médio',      cor: '#3b82f6' },
+            { id: 'otimista',   nome: 'Otimista',   cor: '#10b981' },
+            ...(variaveis.cenariosCustom || []).map(c => ({ id: c.id, nome: c.nome, cor: c.cor }))
+        ];
+    }
+
+    function toggleTpDropdown(e) {
+        if (e) e.stopPropagation();
+        const el = document.getElementById('tpDropdown');
+        if (!el) return;
+        const open = el.style.display !== 'none';
+        el.style.display = open ? 'none' : 'block';
+    }
+
+    function tpSelectAllVessels() {
+        tpVesselsHidden.clear();
+        _reRenderTempoParada();
+    }
+    function tpClearAllVessels() {
+        _tpGetAllVessels().forEach(v => tpVesselsHidden.add(v.nome));
+        _reRenderTempoParada();
+    }
+    function toggleTpVessel(nome) {
+        if (tpVesselsHidden.has(nome)) tpVesselsHidden.delete(nome);
+        else tpVesselsHidden.add(nome);
+        _reRenderTempoParada();
+    }
+    function toggleTpCenario(id) {
+        if (tpCenariosHidden.has(id)) tpCenariosHidden.delete(id);
+        else tpCenariosHidden.add(id);
+        _reRenderTempoParada();
+    }
+
+    function _reRenderTempoParada() {
         const filtro = document.getElementById('filtroRio').value;
         const rios   = [...new Set(dadosRios.map(r => r.nome))];
         const rioSel = filtro || rios[0];
         const proj   = calcularProjecaoRio(rioSel);
         if (proj) renderTempoParada(rioSel, proj);
+    }
+
+    function renderTpDropdown(allVessels) {
+        const list = document.getElementById('tpDropdownList');
+        if (!list) return;
+        const byType = {};
+        allVessels.forEach(v => { (byType[v.tipo] = byType[v.tipo] || []).push(v); });
+        list.innerHTML = Object.entries(byType).map(([tipo, vessels]) => `
+            <div class="mb-2">
+                <p class="text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">${tipo}s</p>
+                ${vessels.map(v => {
+                    const checked = !tpVesselsHidden.has(v.nome);
+                    return `<label class="flex items-center gap-2 text-xs text-gray-700 cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5">
+                        <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleTpVessel('${v.nome.replace(/'/g, "\\'")}')" class="accent-blue-600">
+                        ${v.nome}
+                    </label>`;
+                }).join('')}
+            </div>`).join('');
+    }
+
+    function renderTpCenariosBtns() {
+        const el = document.getElementById('tpCenariosBtns');
+        if (!el) return;
+        el.innerHTML = _tpGetAllCenarios().map(c => {
+            const ativo  = !tpCenariosHidden.has(c.id);
+            const style  = ativo ? `background:${c.cor};border-color:${c.cor};color:white` : '';
+            const cls    = ativo ? '' : 'bg-gray-100 border-gray-300 text-gray-400';
+            return `<button onclick="toggleTpCenario('${c.id}')"
+                class="text-xs px-3 py-0.5 rounded-full border font-medium cursor-pointer transition-all ${cls}" style="${style}">${c.nome}</button>`;
+        }).join('');
     }
 
     function renderTempoParada(rioSel, proj) {
@@ -2128,37 +2247,54 @@
         const barcAtivas = barcacas.filter(b => b.ativo !== false);
         if (!proj || (!empAtivos.length && !barcAtivas.length)) { card.style.display = 'none'; return; }
 
-        const dados = calcularTempoParadaData(rioSel, proj);
-        if (!dados.length) { card.style.display = 'none'; return; }
+        const todosDados = calcularTempoParadaData(rioSel, proj);
+        if (!todosDados.length) { card.style.display = 'none'; return; }
         card.style.display = '';
 
-        renderFiltrosTempoParada(dados);
+        const allVessels = _tpGetAllVessels();
+        renderTpDropdown(allVessels);
+        renderTpCenariosBtns();
 
-        const dadosFiltrados = dados.filter(d => ativosTempoParadaVisiveis[d.cenarioId + '_' + d.nome] !== false);
+        // Fechar dropdown ao clicar fora
+        document.addEventListener('click', function _tpClose(e) {
+            const wrap = document.getElementById('tpDropdownContainer');
+            if (wrap && !wrap.contains(e.target)) {
+                const dd = document.getElementById('tpDropdown');
+                if (dd) dd.style.display = 'none';
+                document.removeEventListener('click', _tpClose);
+            }
+        }, { once: false });
 
-        // ── Gráfico Gantt (barra horizontal flutuante) ──
-        const ctx = document.getElementById('chartTempoParada').getContext('2d');
+        const dadosFiltrados = todosDados.filter(d =>
+            !tpVesselsHidden.has(d.nome) && !tpCenariosHidden.has(d.cenarioId)
+        );
+
+        // ── Gráfico Gantt ──
+        const ctx    = document.getElementById('chartTempoParada').getContext('2d');
         if (chartTempoParada) chartTempoParada.destroy();
 
-        const altura = Math.max(160, dadosFiltrados.length * 38 + 70);
+        const altura = Math.max(180, dadosFiltrados.length * 42 + 80);
         const contEl = document.getElementById('containerChartTempoParada');
         if (contEl) contEl.style.height = altura + 'px';
 
         if (dadosFiltrados.length) {
+            // Viewport dinâmico: 30 dias antes da menor data e 30 dias após a maior
+            const allMs  = dadosFiltrados.flatMap(d => [d.inicio.getTime(), d.fim.getTime()]);
+            const MS_30D = 30 * 86400000;
+            const xMin   = Math.min(...allMs) - MS_30D;
+            const xMax   = Math.max(...allMs) + MS_30D;
+
             const labels   = dadosFiltrados.map(d => d.label);
             const datasPts = dadosFiltrados.map(d => [d.inicio.getTime(), d.fim.getTime()]);
-            const bgCols   = dadosFiltrados.map(d => {
-                const base = d.cor.length > 7 ? d.cor.substring(0, 7) : d.cor;
-                return base + 'cc';
-            });
-            const bdCols   = dadosFiltrados.map(d => d.cor.length > 7 ? d.cor.substring(0, 7) : d.cor);
+            const bgCols   = dadosFiltrados.map(d => (d.cor.length > 7 ? d.cor.substring(0,7) : d.cor) + 'cc');
+            const bdCols   = dadosFiltrados.map(d =>  d.cor.length > 7 ? d.cor.substring(0,7) : d.cor);
+            const ref      = dadosFiltrados; // closure for inline plugin
 
-            const dadosFiltRef = dadosFiltrados; // closure ref for plugin
             chartTempoParada = new Chart(ctx, {
                 type: 'bar',
                 data: {
                     labels,
-                    datasets: [{ label: 'Restrição', data: datasPts, backgroundColor: bgCols, borderColor: bdCols, borderWidth: 1, borderSkipped: false }]
+                    datasets: [{ label: 'Restrição', data: datasPts, backgroundColor: bgCols, borderColor: bdCols, borderWidth: 1.5, borderSkipped: false }]
                 },
                 options: {
                     indexAxis: 'y',
@@ -2170,8 +2306,9 @@
                             callbacks: {
                                 title: items => items[0]?.label || '',
                                 label: c => {
-                                    const d = dadosFiltRef[c.dataIndex];
-                                    return ` ${formatDateBR(d.inicio)} → ${formatDateBR(d.fim)} · ${d.dias} dia${d.dias !== 1 ? 's' : ''}`;
+                                    const d = ref[c.dataIndex];
+                                    const retoma = new Date(d.fim.getTime() + 86400000);
+                                    return ` ${formatDateBR(d.inicio)} → ${formatDateBR(d.fim)} · ${d.dias} dia${d.dias !== 1 ? 's' : ''} · retoma ${formatDateShort(retoma)}`;
                                 }
                             }
                         }
@@ -2179,8 +2316,10 @@
                     scales: {
                         x: {
                             type: 'linear',
+                            min: xMin,
+                            max: xMax,
                             ticks: {
-                                maxTicksLimit: 13,
+                                maxTicksLimit: 14,
                                 callback: v => {
                                     const d = new Date(v);
                                     if (isNaN(d.getTime())) return '';
@@ -2189,7 +2328,7 @@
                             },
                             grid: { color: '#f3f4f6' }
                         },
-                        y: { grid: { display: false } }
+                        y: { grid: { display: false }, ticks: { font: { size: 11 } } }
                     }
                 },
                 plugins: [{
@@ -2197,16 +2336,18 @@
                     afterDatasetsDraw(chart) {
                         const ctx2 = chart.ctx;
                         const meta = chart.getDatasetMeta(0);
-                        dadosFiltRef.forEach((d, i) => {
+                        ref.forEach((d, i) => {
                             const bar = meta.data[i];
-                            if (!bar || bar.width < 22) return;
-                            const text = String(d.dias);
+                            if (!bar) return;
+                            const bw = Math.abs(bar.x - bar.base);
+                            if (bw < 18) return;
+                            const cx = (bar.x + bar.base) / 2; // true center of floating bar
                             ctx2.save();
                             ctx2.fillStyle = 'white';
                             ctx2.font = 'bold 11px Inter, sans-serif';
                             ctx2.textAlign = 'center';
                             ctx2.textBaseline = 'middle';
-                            ctx2.fillText(text, bar.x - bar.width / 2 + bar.width / 2, bar.y);
+                            ctx2.fillText(String(d.dias), cx, bar.y);
                             ctx2.restore();
                         });
                     }
@@ -2214,15 +2355,15 @@
             });
         }
 
-        // ── Tabela de detalhes ──
+        // ── Tabela ──
         const tbody = document.getElementById('tbodyTempoParada');
         if (tbody) {
             tbody.innerHTML = dadosFiltrados.length
                 ? dadosFiltrados.map(d => {
-                    const corBase = d.cor.length > 7 ? d.cor.substring(0, 7) : d.cor;
-                    const retoma  = new Date(d.fim.getTime() + 86400000);
+                    const cb   = d.cor.length > 7 ? d.cor.substring(0,7) : d.cor;
+                    const retoma = new Date(d.fim.getTime() + 86400000);
                     return `<tr>
-                        <td><span class="badge" style="background:${corBase}22;color:${corBase};border:1px solid ${corBase}44">${d.cenario}</span></td>
+                        <td><span class="badge" style="background:${cb}22;color:${cb};border:1px solid ${cb}44">${d.cenario}</span></td>
                         <td class="text-xs text-gray-600">${d.tipo}</td>
                         <td class="font-medium">${d.nome}</td>
                         <td>${formatDateShort(d.inicio)}</td>
@@ -2230,7 +2371,7 @@
                         <td class="font-bold text-orange-600">${d.dias}</td>
                     </tr>`;
                 }).join('')
-                : '<tr><td colspan="6" class="text-center text-gray-400 py-4">Nenhuma restrição projetada para os ativos visíveis.</td></tr>';
+                : '<tr><td colspan="6" class="text-center text-gray-400 py-4">Nenhuma restrição projetada para a seleção atual.</td></tr>';
         }
         lucide.createIcons();
     }
