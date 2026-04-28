@@ -418,6 +418,17 @@
                             <option value="">Padrão (todas as rotas)</option>
                         </select>
                     </div>
+                    <div class="flex items-center gap-2">
+                        <label class="text-sm font-medium text-gray-600 whitespace-nowrap">Período:</label>
+                        <select id="dashFiltroPeriodo" class="input-field text-sm py-1" style="min-width:180px; width:auto" onchange="updateDashboard()">
+                            <option value="restante">Restante do ano</option>
+                            <option value="ano">Ano inteiro</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <label class="text-sm font-medium text-gray-600 whitespace-nowrap">Ano:</label>
+                        <select id="dashFiltroAno" class="input-field text-sm py-1" style="min-width:110px; width:auto" onchange="updateDashboard()"></select>
+                    </div>
                     <div class="flex items-center gap-2 ml-auto">
                         <span class="text-sm text-gray-500 whitespace-nowrap">Visão:</span>
                         <div class="flex rounded-lg overflow-hidden border border-gray-300">
@@ -482,6 +493,30 @@
                             </tr>
                         </thead>
                         <tbody id="tbodyDashboard"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card p-6 mb-6">
+                <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
+                    <h2 class="text-lg font-semibold flex items-center gap-2">
+                        <i data-lucide="warehouse" class="w-5 h-5 text-orange-500"></i> Rastreamento de Pulmão
+                    </h2>
+                    <div class="text-xs text-gray-500">Monitoramento separado — não entra na capacidade final atendida</div>
+                </div>
+                <div class="table-container">
+                    <table id="tabelaPulmaoDashboard">
+                        <thead>
+                            <tr>
+                                <th>Rota</th><th>Pulmão</th><th>Mês</th>
+                                <th class="scenario-optimistic">Envio Otim. (t)</th>
+                                <th class="scenario-medium">Envio Médio (t)</th>
+                                <th class="scenario-pessimistic">Envio Pessim. (t)</th>
+                                <th>Consumo Médio (t)</th>
+                                <th>Saldo Médio (t)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbodyPulmaoDashboard"></tbody>
                     </table>
                 </div>
             </div>
@@ -947,6 +982,13 @@
 
     // Helpers de módulo reutilizados em múltiplas funções
     const numOrNull = v => (v === '' || v === null || isNaN(parseFloat(v))) ? null : parseFloat(v);
+    const getValorPositivo = (...candidatos) => {
+        for (const valor of candidatos) {
+            const n = parseFloat(valor);
+            if (Number.isFinite(n) && n > 0) return n;
+        }
+        return null;
+    };
 
     function statusBadge(deficit, capMe, meta) {
         if (deficit > 0) return { status: 'DÉFICIT', bc: 'badge-danger' };
@@ -1532,6 +1574,139 @@
             });
         });
         return map;
+    }
+
+    function isRotaDestinoFinal(rota) {
+        return !!rota && !rota.destinoIsPulmao;
+    }
+
+    function getAnosDisponiveisDashboard() {
+        const anosDados = dadosRios
+            .map(r => new Date(r.data + 'T00:00:00').getFullYear())
+            .filter(y => Number.isFinite(y));
+        const anoAtual = new Date().getFullYear();
+        const anoMin = anosDados.length ? Math.min(...anosDados) : anoAtual;
+        const anoMax = Math.max(anoAtual + 5, ...(anosDados.length ? anosDados : [anoAtual]));
+        return Array.from({ length: anoMax - anoMin + 1 }, (_, i) => anoMin + i);
+    }
+
+    function syncDashboardTimeFilters() {
+        const anoAtual = new Date().getFullYear();
+        const selAno = document.getElementById('dashFiltroAno');
+        const selPeriodo = document.getElementById('dashFiltroPeriodo');
+        if (!selAno || !selPeriodo) return;
+
+        const prevAno = parseInt(selAno.value);
+        const anos = getAnosDisponiveisDashboard();
+        selAno.innerHTML = anos.map(ano => `<option value="${ano}">${ano}</option>`).join('');
+        selAno.value = anos.includes(prevAno) ? String(prevAno) : String(anoAtual);
+
+        if (parseInt(selAno.value) !== anoAtual && selPeriodo.value === 'restante') {
+            selPeriodo.value = 'ano';
+        }
+    }
+
+    function getDashboardAnoSelecionado() {
+        syncDashboardTimeFilters();
+        const anoAtual = new Date().getFullYear();
+        return parseInt(document.getElementById('dashFiltroAno')?.value) || anoAtual;
+    }
+
+    function getDashboardPeriodoSelecionado() {
+        return document.getElementById('dashFiltroPeriodo')?.value || 'restante';
+    }
+
+    function getMesesDashboard(ano, periodo) {
+        const anoAtual = new Date().getFullYear();
+        const mesAtual = new Date().getMonth();
+        const inicio = (ano === anoAtual && periodo === 'restante') ? mesAtual : 0;
+        return Array.from({ length: 12 - inicio }, (_, i) => inicio + i);
+    }
+
+    function getNivelHistoricoRioPorMesAno(nomeRio, ano, mes) {
+        const valores = dadosRios
+            .filter(r => r.nome === nomeRio)
+            .map(r => ({ ...r, d: new Date(r.data + 'T00:00:00') }))
+            .filter(r => !isNaN(r.d) && r.d.getFullYear() === ano && r.d.getMonth() === mes && Number.isFinite(r.nivel))
+            .map(r => r.nivel);
+        if (!valores.length) return null;
+        return valores.reduce((a, b) => a + b, 0) / valores.length;
+    }
+
+    function getParametrosRio(nomeRio) {
+        const dadosRio = dadosRios
+            .filter(r => r.nome === nomeRio)
+            .map(r => ({ ...r, d: new Date(r.data + 'T00:00:00') }))
+            .filter(r => !isNaN(r.d) && Number.isFinite(r.nivel));
+        if (dadosRio.length < 1) return null;
+
+        const buckets = Array.from({ length: 12 }, () => []);
+        dadosRio.forEach(r => buckets[r.d.getMonth()].push(r.nivel));
+
+        const mediaMes = buckets.map(arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
+        const stdMes = buckets.map((arr, i) => {
+            if (arr.length < 2) return 0;
+            const m = mediaMes[i];
+            return Math.sqrt(arr.reduce((s, v) => s + (v - m) ** 2, 0) / arr.length);
+        });
+        const fallbackMedia = (() => {
+            const valid = mediaMes.filter(v => v !== null);
+            return valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : 0;
+        })();
+        const fallbackStd = (() => {
+            const valid = stdMes.filter((_, i) => mediaMes[i] !== null);
+            return valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : 0;
+        })();
+
+        const anos = variaveis.anosProjecao || 3;
+        const corte = new Date();
+        corte.setFullYear(corte.getFullYear() - anos);
+        const dadosTendencia = dadosRio.filter(r => r.d >= corte).sort((a, b) => a.d - b.d);
+        const ult = dadosTendencia.length >= 2 ? dadosTendencia : [...dadosRio].sort((a, b) => a.d - b.d);
+        let tendencia = 0;
+        if (ult.length >= 2) {
+            const n = ult.length;
+            const xs = ult.map((_, i) => i);
+            const ys = ult.map(r => r.nivel);
+            const mx = xs.reduce((a, b) => a + b, 0) / n;
+            const my = ys.reduce((a, b) => a + b, 0) / n;
+            const num = xs.reduce((s, x, i) => s + (x - mx) * (ys[i] - my), 0);
+            const den = xs.reduce((s, x) => s + (x - mx) ** 2, 0);
+            tendencia = den === 0 ? 0 : num / den;
+        }
+
+        return { mediaMes, stdMes, fallbackMedia, fallbackStd, tendencia };
+    }
+
+    function getNivelRioCenarioAnoMes(nomeRio, ano, mes, cenario) {
+        const anoAtual = new Date().getFullYear();
+        const mesAtual = new Date().getMonth();
+
+        if (ano < anoAtual) {
+            return getNivelHistoricoRioPorMesAno(nomeRio, ano, mes);
+        }
+
+        if (ano === anoAtual) {
+            const p = getProjecaoPorMes(nomeRio)?.[mes];
+            if (!p) return null;
+            if (['otimista', 'medio', 'pessimista'].includes(cenario)) return p[cenario] ?? p.medio ?? p.historico;
+            return p.custom?.[cenario] ?? p.medio ?? p.historico;
+        }
+
+        const params = getParametrosRio(nomeRio);
+        if (!params) return null;
+        const base = params.mediaMes[mes] !== null ? params.mediaMes[mes] : params.fallbackMedia;
+        const std = params.stdMes[mes] > 0 ? params.stdMes[mes] : params.fallbackStd;
+        const mesesAFrente = (ano - anoAtual) * 12 + (mes - mesAtual);
+        const ajuste = params.tendencia * Math.max(1, mesesAFrente);
+        const medio = Math.max(0, base + ajuste);
+
+        if (cenario === 'otimista') return Math.max(0, medio + std);
+        if (cenario === 'pessimista') return Math.max(0, medio - std);
+        if (cenario === 'medio') return medio;
+
+        const cenConf = (variaveis.cenariosCustom || []).find(c => c.id === cenario);
+        return cenConf ? projetarNivelCenarioCustom(cenConf, mes, base, std, ajuste) : medio;
     }
 
     function updateRioChart() {
@@ -2333,9 +2508,30 @@
         if (!nome || !rio) { alert('Nome e rio são obrigatórios.'); return; }
         if (!cidadeOrigemId)  { alert('Selecione a cidade de origem.'); return; }
         if (!cidadeDestinoId) { alert('Selecione a cidade de destino.'); return; }
-        const cidadeDestValidacao = cidadesDemanda.find(c => c.id === cidadeDestinoId);
-        if (!destinoIsPulmao && cidadeDestValidacao?.isDestino && !(cidadeDestValidacao?.tonHoraElevacao > 0)) {
-            alert('A cidade de destino não tem t/h Elevação cadastrada. Edite o cadastro da cidade.'); return;
+
+        const cidadeOrigemValidacao = cidadesDemanda.find(c => c.id === cidadeOrigemId);
+        const cidadeDestValidacao   = cidadesDemanda.find(c => c.id === cidadeDestinoId);
+
+        if (!origemIsPulmao) {
+            if (!cidadeOrigemValidacao?.isOriginacao) {
+                alert('A cidade de origem precisa estar marcada como Originação ou a rota deve ser marcada como pulmão na origem.');
+                return;
+            }
+            if (!(getValorPositivo(cidadeOrigemValidacao?.tonHoraOriginacao, null) > 0)) {
+                alert('A cidade de origem não tem vazão de carregamento (t/h) cadastrada. Edite o cadastro da cidade.');
+                return;
+            }
+        }
+
+        if (!destinoIsPulmao) {
+            if (!cidadeDestValidacao?.isDestino) {
+                alert('A cidade de destino precisa estar marcada como Destino ou a entrega deve ser marcada como pulmão.');
+                return;
+            }
+            if (!(getValorPositivo(cidadeDestValidacao?.tonHoraElevacao, null) > 0)) {
+                alert('A cidade de destino não tem t/h Elevação cadastrada. Edite o cadastro da cidade.');
+                return;
+            }
         }
 
         const cidadesAtendidas = [...new Set([cidadeOrigemId, cidadeDestinoId])];
@@ -2768,7 +2964,10 @@
         const v = getVariaveisCenario(cenario);
         const caladoOp = nivelRio + v.abaco - v.faq;
 
-        if (caladoOp < emp.caladoMin) return {
+        // Quando a origem é pulmão, o empurrador é considerado apto a coletar a carga
+        // já formada ali. Nesse caso, o calado do empurrador nesta rota não bloqueia a
+        // operação; quem precisa respeitar o calado de entrega ao pulmão são as barcaças.
+        if (!rota.origemIsPulmao && caladoOp < emp.caladoMin) return {
             emp, caladoOp, composicaoDetalhada:[],
             motivo:`Calado op. (${caladoOp.toFixed(2)} m) < mín. do empurrador (${emp.caladoMin.toFixed(2)} m)`,
             viagens:0, volumeTotal:0
@@ -2823,8 +3022,38 @@
 
         const cidadeOrigem  = cidadesDemanda.find(c => c.id === rota.cidadeOrigemId);
         const cidadeDestino = cidadesDemanda.find(c => c.id === rota.cidadeDestinoId);
-        const tonHoraOrigem   = cidadeOrigem?.tonHoraOriginacao  || rota.tonHoraOrigem  || 1;
-        const tonHoraElevacao = cidadeDestino?.tonHoraElevacao   || rota.tonHoraDestino || 1;
+        const tonHoraOrigem   = rota.origemIsPulmao  ? null : getValorPositivo(cidadeOrigem?.tonHoraOriginacao, rota.tonHoraOrigem);
+        const tonHoraElevacao = rota.destinoIsPulmao ? null : getValorPositivo(cidadeDestino?.tonHoraElevacao, rota.tonHoraDestino);
+
+        if (!rota.origemIsPulmao && !cidadeOrigem?.isOriginacao) {
+            return {
+                emp, caladoOp, composicaoDetalhada,
+                motivo:`Origem "${cidadeOrigem?.nome || '?'}" não está marcada como Originação`,
+                viagens:0, volumeTotal:0
+            };
+        }
+        if (!rota.destinoIsPulmao && !cidadeDestino?.isDestino) {
+            return {
+                emp, caladoOp, composicaoDetalhada,
+                motivo:`Destino "${cidadeDestino?.nome || '?'}" não está marcado como Destino`,
+                viagens:0, volumeTotal:0
+            };
+        }
+        if (!rota.origemIsPulmao && !tonHoraOrigem) {
+            return {
+                emp, caladoOp, composicaoDetalhada,
+                motivo:`Origem "${cidadeOrigem?.nome || '?'}" sem vazão de carregamento válida (t/h)`,
+                viagens:0, volumeTotal:0
+            };
+        }
+        if (!rota.destinoIsPulmao && !tonHoraElevacao) {
+            return {
+                emp, caladoOp, composicaoDetalhada,
+                motivo:`Destino "${cidadeDestino?.nome || '?'}" sem t/h Elevação válida`,
+                viagens:0, volumeTotal:0
+            };
+        }
+
         const hCarga    = rota.origemIsPulmao  ? 0 : volComboio / tonHoraOrigem;
         const hDescarga = rota.destinoIsPulmao ? 0 : volComboio / tonHoraElevacao;
         const cicloH    = hCarga + (rota.tempoViagemH || 0) + hDescarga + (rota.tempoEsperaH || 0);
@@ -2851,6 +3080,16 @@
             if (r) { total += r.volumeTotal; detalhes.push(r); }
         });
         return { total, detalhes };
+    }
+
+    function aplicarVolumeAjustadoNaRota(capRota, volumeNovo) {
+        const volumeAnterior = capRota?.total || 0;
+        const fator = volumeAnterior > 0 ? Math.max(0, volumeNovo) / volumeAnterior : 0;
+        capRota.total = Math.max(0, volumeNovo);
+        (capRota.detalhes || []).forEach(det => {
+            det.viagens     = (det.viagens     || 0) * fator;
+            det.volumeTotal = (det.volumeTotal || 0) * fator;
+        });
     }
 
     // Calcula capacidades de todas as rotas no mês/cenário ajustando pushers compartilhados.
@@ -2951,29 +3190,84 @@
             }
         });
 
-        // Cap de volume pulmão: rotas com origemIsPulmão não podem transportar mais do
-        // que o total entregue ao pulmão pelas rotas entregadoras (destinoIsPulmao=true)
-        // no mesmo mês/cenário. Escala viagens proporcionalmente quando necessário.
-        rotasAtivas.forEach(rota => {
-            if (!rota.origemIsPulmao || !caps[rota.id]) return;
+        // Rateio de pulmão: o volume entregue ao pulmão precisa ser distribuído entre as
+        // rotas alimentadas por ele. Regra: atender primeiro a menor meta/demanda; o saldo
+        // remanescente segue para as demais rotas, respeitando a capacidade de cada uma.
+        const pulmoesOrigemIds = [...new Set(rotasAtivas
+            .filter(r => r.origemIsPulmao && rotaAtivaNoMes(r, mes) && r.cidadeOrigemId)
+            .map(r => r.cidadeOrigemId))];
+
+        pulmoesOrigemIds.forEach(cidadePulmaoId => {
+            const rotasConsumidoras = rotasAtivas.filter(r =>
+                r.origemIsPulmao &&
+                r.cidadeOrigemId === cidadePulmaoId &&
+                rotaAtivaNoMes(r, mes) &&
+                caps[r.id]
+            );
+            if (rotasConsumidoras.length === 0) return;
+
             const rotasEntregadoras = rotasAtivas.filter(r =>
-                r.id !== rota.id &&
                 r.destinoIsPulmao &&
-                r.cidadeDestinoId === rota.cidadeOrigemId &&
+                r.cidadeDestinoId === cidadePulmaoId &&
                 rotaAtivaNoMes(r, mes)
             );
             const totalNoPulmao = rotasEntregadoras.reduce(
                 (soma, r) => soma + (caps[r.id]?.total || 0), 0
             );
-            const capAtual = caps[rota.id].total;
-            if (capAtual > totalNoPulmao) {
-                const fator = totalNoPulmao > 0 ? totalNoPulmao / capAtual : 0;
-                caps[rota.id].total = totalNoPulmao;
-                caps[rota.id].detalhes.forEach(det => {
-                    det.viagens      = (det.viagens      || 0) * fator;
-                    det.volumeTotal  = (det.volumeTotal  || 0) * fator;
+
+            let volumeRestante = totalNoPulmao;
+            const infos = rotasConsumidoras.map(rota => ({
+                rota,
+                capAtual: caps[rota.id]?.total || 0,
+                demanda: demandaMapa[rota.id] || 0
+            }));
+
+            const comDemanda = infos
+                .filter(i => i.capAtual > 0 && i.demanda > 0)
+                .sort((a, b) => a.demanda - b.demanda);
+            const semDemanda = infos.filter(i => i.capAtual > 0 && i.demanda <= 0);
+            const totalAtivo = infos.reduce((s, i) => s + i.capAtual, 0);
+
+            if (totalAtivo <= totalNoPulmao) return;
+
+            comDemanda.forEach((info, idx) => {
+                const isLastComDemanda = idx === comDemanda.length - 1;
+                const temSemDemanda = semDemanda.length > 0;
+                const limiteMeta = (!isLastComDemanda || temSemDemanda)
+                    ? Math.min(info.capAtual, info.demanda)
+                    : info.capAtual;
+                const volumeNovo = Math.max(0, Math.min(info.capAtual, limiteMeta, volumeRestante));
+                aplicarVolumeAjustadoNaRota(caps[info.rota.id], volumeNovo);
+                volumeRestante = Math.max(0, volumeRestante - volumeNovo);
+            });
+
+            if (semDemanda.length > 0) {
+                const capSemDemanda = semDemanda.reduce((s, i) => s + i.capAtual, 0);
+                semDemanda.forEach((info, idx) => {
+                    const isLast = idx === semDemanda.length - 1;
+                    const fatia = capSemDemanda > 0 ? volumeRestante * (info.capAtual / capSemDemanda) : 0;
+                    const volumeNovo = isLast
+                        ? Math.max(0, Math.min(info.capAtual, volumeRestante))
+                        : Math.max(0, Math.min(info.capAtual, fatia));
+                    aplicarVolumeAjustadoNaRota(caps[info.rota.id], volumeNovo);
+                    volumeRestante = Math.max(0, volumeRestante - volumeNovo);
                 });
             }
+
+            if (comDemanda.length > 0 && volumeRestante > 0) {
+                const ultima = comDemanda[comDemanda.length - 1];
+                const capAtualUltima = caps[ultima.rota.id]?.total || 0;
+                const capacidadeOriginal = ultima.capAtual;
+                const adicional = Math.max(0, Math.min(capacidadeOriginal - capAtualUltima, volumeRestante));
+                if (adicional > 0) {
+                    aplicarVolumeAjustadoNaRota(caps[ultima.rota.id], capAtualUltima + adicional);
+                    volumeRestante = Math.max(0, volumeRestante - adicional);
+                }
+            }
+
+            infos
+                .filter(i => i.capAtual <= 0)
+                .forEach(i => aplicarVolumeAjustadoNaRota(caps[i.rota.id], 0));
         });
 
         return { capacidades: caps, conflitos };
@@ -3029,36 +3323,93 @@
         };
     }
 
+    function renderPulmaoDashboard(rotasDoCenario, mesesDashboard, capsAjust) {
+        const tbody = document.getElementById('tbodyPulmaoDashboard');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+
+        const rotasPulmao = rotasDoCenario.filter(r => r.destinoIsPulmao);
+        if (rotasPulmao.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-gray-400 py-4">Nenhuma rota com entrega em pulmão neste cenário.</td></tr>';
+            return;
+        }
+
+        let linhas = 0;
+        rotasPulmao.forEach(rota => {
+            const nomePulmao = cidadesDemanda.find(c => c.id === rota.cidadeDestinoId)?.nome || '?';
+            mesesDashboard.forEach(mes => {
+                if (!rotaAtivaNoMes(rota, mes)) return;
+
+                const envOt = capsAjust[`${mes}_otimista`]?.[rota.id]?.total || 0;
+                const envMe = capsAjust[`${mes}_medio`]?.[rota.id]?.total || 0;
+                const envPe = capsAjust[`${mes}_pessimista`]?.[rota.id]?.total || 0;
+
+                const rotasConsumidoras = rotasDoCenario.filter(r =>
+                    r.origemIsPulmao &&
+                    r.cidadeOrigemId === rota.cidadeDestinoId &&
+                    rotaAtivaNoMes(r, mes)
+                );
+                const consMe = rotasConsumidoras.reduce((s, r) => s + (capsAjust[`${mes}_medio`]?.[r.id]?.total || 0), 0);
+                const saldoMe = envMe - consMe;
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="font-medium">${rota.nome}</td>
+                    <td>${nomePulmao}</td>
+                    <td>${MESES_FULL[mes]}</td>
+                    <td class="scenario-optimistic font-medium">${Math.round(envOt).toLocaleString('pt-BR')}</td>
+                    <td class="scenario-medium font-medium">${Math.round(envMe).toLocaleString('pt-BR')}</td>
+                    <td class="scenario-pessimistic font-medium">${Math.round(envPe).toLocaleString('pt-BR')}</td>
+                    <td class="font-medium">${Math.round(consMe).toLocaleString('pt-BR')}</td>
+                    <td class="${saldoMe < 0 ? 'text-red-600 font-bold' : 'text-gray-700'}">${Math.round(saldoMe).toLocaleString('pt-BR')}</td>`;
+                tbody.appendChild(tr);
+                linhas++;
+            });
+        });
+
+        if (!linhas) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-gray-400 py-4">Nenhum movimento de pulmão no período selecionado.</td></tr>';
+        }
+    }
+
     function updateDashboard() {
         const tbody = document.getElementById('tbodyDashboard');
         tbody.innerHTML = '';
 
+        syncDashboardTimeFilters();
+        const ano = getDashboardAnoSelecionado();
+        const periodo = getDashboardPeriodoSelecionado();
+        const mesesDashboard = getMesesDashboard(ano, periodo);
+
         // Sincroniza dropdown de rotas
         const filtroEl = document.getElementById('dashFiltroRota');
         const prevFiltro = filtroEl ? filtroEl.value : '';
+        const rotasDestinoFinal = rotas.filter(isRotaDestinoFinal);
         if (filtroEl) {
             filtroEl.innerHTML = '<option value="">Todas as rotas</option>' +
-                rotas.map(r => `<option value="${r.id}">${r.nome}</option>`).join('');
+                rotasDestinoFinal.map(r => `<option value="${r.id}">${r.nome}</option>`).join('');
             if ([...filtroEl.options].some(o => o.value === prevFiltro)) filtroEl.value = prevFiltro;
         }
         const filtroRotaId = filtroEl && filtroEl.value ? parseFloat(filtroEl.value) : null;
         const rotasDoCenario = getRotasAtivasPorCenarioSelecionado();
-        const rotasFiltradas = filtroRotaId ? rotasDoCenario.filter(r => r.id === filtroRotaId) : rotasDoCenario;
+        const rotasExibidas = (filtroRotaId
+            ? rotasDoCenario.filter(r => r.id === filtroRotaId)
+            : rotasDoCenario.filter(isRotaDestinoFinal)
+        ).filter(isRotaDestinoFinal);
 
-        if (rotasFiltradas.length === 0 || dadosRios.length === 0) {
+        if (rotasExibidas.length === 0 || dadosRios.length === 0) {
             tbody.innerHTML = '<tr><td colspan="8" class="text-center text-gray-500 py-6">Cadastre rotas e importe dados de rio para visualizar o dashboard</td></tr>';
             document.getElementById('resumoOtimista').textContent = '-';
             document.getElementById('resumoMedio').textContent = '-';
             document.getElementById('resumoPessimista').textContent = '-';
             document.getElementById('resumoMeta').textContent = '-';
+            renderPulmaoDashboard([], mesesDashboard, {});
             renderAlertas([]);
             renderChartDashboard({labels:[],metas:[],otimista:[],medio:[],pessimista:[]});
-            renderChartComparativoCenarios(new Date().getFullYear(), new Date().getMonth());
+            renderChartComparativoCenarios(ano, mesesDashboard);
             return;
         }
 
-        const ano = new Date().getFullYear();
-        const mesAtual = new Date().getMonth();
         let totOt=0, totMe=0, totPe=0, totMeta=0;
         const alertas = [];
         const chartData = { labels:[], metas:[], otimista:[], medio:[], pessimista:[] };
@@ -3066,15 +3417,17 @@
         // Pré-computa capacidades ajustadas para cada mês × cenário,
         // resolvendo conflitos de empurradores alocados em múltiplas rotas.
         const capsAjust = {};
+        const demandaMesMap = {};
         const conflitosMap = new Map();
-        for (let mes = mesAtual; mes < 12; mes++) {
+        for (const mes of mesesDashboard) {
+            demandaMesMap[mes] = calcularDemandaMensalPorRota(rotasDoCenario, mes);
             for (const cen of ['otimista', 'medio', 'pessimista']) {
                 const nivelRioMap = {};
-                rotasFiltradas.forEach(rota => {
-                    const pp = getProjecaoPorMes(rota.rio)?.[mes];
-                    if (pp) nivelRioMap[rota.id] = pp[cen];
+                rotasDoCenario.forEach(rota => {
+                    const nivel = getNivelRioCenarioAnoMes(rota.rio, ano, mes, cen);
+                    if (nivel !== null && nivel !== undefined) nivelRioMap[rota.id] = nivel;
                 });
-                const { capacidades, conflitos } = calcularCapacidadesAjustadas(rotasFiltradas, mes, ano, nivelRioMap, cen);
+                const { capacidades, conflitos } = calcularCapacidadesAjustadas(rotasDoCenario, mes, ano, nivelRioMap, cen);
                 capsAjust[`${mes}_${cen}`] = capacidades;
                 conflitos.forEach(c => {
                     const key = c.nomeEmp + '|' + c.nomesRotas.slice().sort().join(',');
@@ -3096,19 +3449,20 @@
                 <th>Déficit (pessim.)</th><th>Status</th>`;
             const titleEl = document.getElementById('dashChartTitle');
             if (titleEl) titleEl.textContent = filtroRotaId
-                ? `${rotasFiltradas[0]?.nome} — Capacidade Mensal`
-                : 'Capacidade Total da Frota por Mês';
+                ? `${rotasExibidas[0]?.nome} — Capacidade Mensal (${ano})`
+                : `Capacidade Total da Frota por Mês (${ano})`;
 
             const mesMapa = {};
-            rotasFiltradas.forEach(rota => {
-                const projMap = getProjecaoPorMes(rota.rio);
-                if (!projMap) return;
-                for (let mes = mesAtual; mes < 12; mes++) {
+            rotasExibidas.forEach(rota => {
+                for (const mes of mesesDashboard) {
                     if (!rotaAtivaNoMes(rota, mes)) continue;
-                    const p = projMap[mes];
-                    if (!p) continue;
-                    const demandaRateio = calcularDemandaMensalPorRota(rotasFiltradas, mes);
-                    const meta  = demandaRateio.porRota[rota.id] || 0;
+                    const p = {
+                        otimista: getNivelRioCenarioAnoMes(rota.rio, ano, mes, 'otimista'),
+                        medio: getNivelRioCenarioAnoMes(rota.rio, ano, mes, 'medio'),
+                        pessimista: getNivelRioCenarioAnoMes(rota.rio, ano, mes, 'pessimista')
+                    };
+                    if (p.medio == null && p.otimista == null && p.pessimista == null) continue;
+                    const meta  = demandaMesMap[mes]?.porRota[rota.id] || 0;
                     const capOt = capsAjust[`${mes}_otimista`]?.[rota.id]    || { total: 0, detalhes: [] };
                     const capMe = capsAjust[`${mes}_medio`]?.[rota.id]       || { total: 0, detalhes: [] };
                     const capPe = capsAjust[`${mes}_pessimista`]?.[rota.id]  || { total: 0, detalhes: [] };
@@ -3122,13 +3476,13 @@
                 }
             });
 
-            for (let mes = mesAtual; mes < 12; mes++) {
+            for (const mes of mesesDashboard) {
                 const d = mesMapa[mes];
                 if (!d) continue;
                 const deficitPe = Math.max(0, d.meta - d.pe);
                 const deficitMe = Math.max(0, d.meta - d.me);
                 const { status, bc } = statusBadge(deficitPe, d.me, d.meta);
-                const rotaNome = filtroRotaId ? rotasFiltradas[0].nome : 'Total frota';
+                const rotaNome = filtroRotaId ? rotasExibidas[0].nome : 'Total frota';
                 if (deficitPe > 0) alertas.push({ cen: 'pessimista', rota: rotaNome, mes: MESES_FULL[mes], deficit: deficitPe, cap: d.pe, meta: d.meta });
                 if (deficitMe > 0) alertas.push({ cen: 'medio', rota: rotaNome, mes: MESES_FULL[mes], deficit: deficitMe, cap: d.me, meta: d.meta });
 
@@ -3163,18 +3517,19 @@
                 <th>Déficit (pessim.)</th><th>Status</th>`;
             const titleEl = document.getElementById('dashChartTitle');
             if (titleEl) titleEl.textContent = filtroRotaId
-                ? `${rotasFiltradas[0]?.nome} — Capacidade vs Budget`
-                : 'Capacidade vs Budget por Rota';
+                ? `${rotasExibidas[0]?.nome} — Capacidade vs Budget (${ano})`
+                : `Capacidade vs Budget por Rota (${ano})`;
 
-            rotasFiltradas.forEach(rota => {
-                const projMap = getProjecaoPorMes(rota.rio);
-                if (!projMap) return;
-                for (let mes = mesAtual; mes < 12; mes++) {
+            rotasExibidas.forEach(rota => {
+                for (const mes of mesesDashboard) {
                     if (!rotaAtivaNoMes(rota, mes)) continue;
-                    const p = projMap[mes];
-                    if (!p) continue;
-                    const demandaRateio = calcularDemandaMensalPorRota(rotasFiltradas, mes);
-                    const meta  = demandaRateio.porRota[rota.id] || 0;
+                    const p = {
+                        otimista: getNivelRioCenarioAnoMes(rota.rio, ano, mes, 'otimista'),
+                        medio: getNivelRioCenarioAnoMes(rota.rio, ano, mes, 'medio'),
+                        pessimista: getNivelRioCenarioAnoMes(rota.rio, ano, mes, 'pessimista')
+                    };
+                    if (p.medio == null && p.otimista == null && p.pessimista == null) continue;
+                    const meta  = demandaMesMap[mes]?.porRota[rota.id] || 0;
                     const capOt = capsAjust[`${mes}_otimista`]?.[rota.id]    || { total: 0, detalhes: [] };
                     const capMe = capsAjust[`${mes}_medio`]?.[rota.id]       || { total: 0, detalhes: [] };
                     const capPe = capsAjust[`${mes}_pessimista`]?.[rota.id]  || { total: 0, detalhes: [] };
@@ -3213,10 +3568,11 @@
         document.getElementById('resumoPessimista').textContent = Math.round(totPe).toLocaleString('pt-BR') + ' t';
         document.getElementById('resumoMeta').textContent       = Math.round(totMeta).toLocaleString('pt-BR') + ' t';
 
+        renderPulmaoDashboard(rotasDoCenario, mesesDashboard, capsAjust);
         renderAlertas(alertas, conflitosLista);
         renderChartDashboard(chartData);
-        renderChartComparativoCenarios(ano, mesAtual);
-        renderCenariosCustomDashboard(ano, mesAtual);
+        renderChartComparativoCenarios(ano, mesesDashboard);
+        renderCenariosCustomDashboard(ano, mesesDashboard);
     }
 
     function abrirDetalheMes(mes, ano, rotasData) {
@@ -3282,10 +3638,12 @@
 
     function toggleDashCenario(id) {
         dashCenariosVisiveis[id] = !(id in dashCenariosVisiveis ? dashCenariosVisiveis[id] : true);
-        renderCenariosCustomDashboard(new Date().getFullYear(), new Date().getMonth());
+        const ano = getDashboardAnoSelecionado();
+        const mesesDashboard = getMesesDashboard(ano, getDashboardPeriodoSelecionado());
+        renderCenariosCustomDashboard(ano, mesesDashboard);
     }
 
-    function renderCenariosCustomDashboard(ano, mesAtual) {
+    function renderCenariosCustomDashboard(ano, mesesDashboard) {
         const container = document.getElementById('cenariosCustomDashboard');
         if (!container) return;
         const lista = variaveis.cenariosCustom || [];
@@ -3322,17 +3680,24 @@
             let totalCap = 0;
             const rows = [];
 
-            rotas.forEach(rota => {
-                const projMap = getProjecaoPorMes(rota.rio);
-                if (!projMap) return;
-                for (let mes = mesAtual; mes < 12; mes++) {
+            const rotasCalculo = rotas.slice();
+            const capsPorMes = {};
+            const demandaPorMes = {};
+            mesesDashboard.forEach(mes => {
+                demandaPorMes[mes] = calcularDemandaMensalPorRota(rotasCalculo, mes);
+                const nivelRioMap = {};
+                rotasCalculo.forEach(rota => {
+                    const nivel = getNivelRioCenarioAnoMes(rota.rio, ano, mes, cenConf.id);
+                    if (nivel !== null && nivel !== undefined) nivelRioMap[rota.id] = nivel;
+                });
+                capsPorMes[mes] = calcularCapacidadesAjustadas(rotasCalculo, mes, ano, nivelRioMap, cenConf.id).capacidades;
+            });
+
+            rotas.filter(isRotaDestinoFinal).forEach(rota => {
+                for (const mes of mesesDashboard) {
                     if (!rotaAtivaNoMes(rota, mes)) continue;
-                    const p = projMap[mes];
-                    if (!p) continue;
-                    const nivel = p.custom[cenConf.id] ?? p.medio;
-                    const cap   = calcularCapacidadeRotaMes(rota, mes, ano, nivel, cenConf.id);
-                    const demandaRateio = calcularDemandaMensalPorRota(rotas, mes);
-                    const meta  = demandaRateio.porRota[rota.id] || 0;
+                    const cap   = capsPorMes[mes]?.[rota.id] || { total: 0, detalhes: [] };
+                    const meta  = demandaPorMes[mes]?.porRota[rota.id] || 0;
                     totalCap   += cap.total;
                     const deficit = Math.max(0, meta - cap.total);
                     const badgeClass = deficit > 0 ? 'badge-danger' : 'badge-success';
@@ -3642,7 +4007,7 @@
         });
     }
 
-    function renderChartComparativoCenarios(ano, mesAtual) {
+    function renderChartComparativoCenarios(ano, mesesDashboard) {
         const canvas = document.getElementById('chartComparativoCenarios');
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
@@ -3658,14 +4023,18 @@
             const rotasCen = rotas.filter(r => (cen.rotasIds || []).includes(r.id));
             let capTotal = 0;
             let metaTotal = 0;
-            for (let mes = mesAtual; mes < 12; mes++) {
+            for (const mes of mesesDashboard) {
                 const rateio = calcularDemandaMensalPorRota(rotasCen, mes);
                 metaTotal += rateio.total;
+                const nivelRioMap = {};
                 rotasCen.forEach(r => {
+                    const nivel = getNivelRioCenarioAnoMes(r.rio, ano, mes, 'medio');
+                    if (nivel !== null && nivel !== undefined) nivelRioMap[r.id] = nivel;
+                });
+                const caps = calcularCapacidadesAjustadas(rotasCen, mes, ano, nivelRioMap, 'medio').capacidades;
+                rotasCen.filter(isRotaDestinoFinal).forEach(r => {
                     if (!rotaAtivaNoMes(r, mes)) return;
-                    const p = getProjecaoPorMes(r.rio)?.[mes];
-                    if (!p) return;
-                    capTotal += calcularCapacidadeRotaMes(r, mes, ano, p.medio, 'medio').total;
+                    capTotal += caps[r.id]?.total || 0;
                 });
             }
             labels.push(cen.nome);
