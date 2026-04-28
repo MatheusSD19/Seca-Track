@@ -2790,6 +2790,7 @@
         if (rota.origemIsPulmao) {
             const rotasEntregadoras = rotas.filter(r =>
                 r.id !== rota.id &&
+                r.destinoIsPulmao &&
                 r.cidadeDestinoId === rota.cidadeOrigemId &&
                 rotaAtivaNoMes(r, mes)
             );
@@ -2904,9 +2905,6 @@
 
             if (infos.length < 2) return;
 
-            // Menor demanda primeiro
-            infos.sort((a, b) => a.demanda - b.demanda);
-
             conflitos.push({
                 nomeEmp:    empurradores.find(e => e.id === eId)?.nome || '?',
                 nomesRotas: infos.map(i => i.nomeRota),
@@ -2914,23 +2912,68 @@
                 mes
             });
 
+            // Rotas com demanda > 0: menor demanda primeiro; a última recebe tudo que
+            // sobrar (maximiza throughput da rota mais exigida).
+            // Rotas com demanda = 0 (ex: destino pulmão sem meta própria): recebem as
+            // horas restantes divididas igualmente — assim nenhuma fica zerada.
+            const comDemanda = infos.filter(i => i.demanda > 0)
+                                    .sort((a, b) => a.demanda - b.demanda);
+            const semDemanda = infos.filter(i => i.demanda === 0);
+
             let horasRestantes = totalHoras;
-            infos.forEach((info, idx) => {
-                const isLast = idx === infos.length - 1;
+
+            comDemanda.forEach((info, idx) => {
+                const isLast = idx === comDemanda.length - 1 && semDemanda.length === 0;
                 let viagensAjust;
                 if (isLast) {
                     viagensAjust = horasRestantes / info.cicloH;
                 } else {
-                    const viagensNec   = info.demanda > 0 ? Math.ceil(info.demanda / info.volComboio) : 0;
-                    const horasAloc    = Math.min(viagensNec * info.cicloH, horasRestantes);
-                    viagensAjust       = horasAloc / info.cicloH;
-                    horasRestantes     = Math.max(0, horasRestantes - horasAloc);
+                    const viagensNec = Math.ceil(info.demanda / info.volComboio);
+                    const horasAloc  = Math.min(viagensNec * info.cicloH, horasRestantes);
+                    viagensAjust     = horasAloc / info.cicloH;
+                    horasRestantes   = Math.max(0, horasRestantes - horasAloc);
                 }
                 const volNovo = viagensAjust * info.volComboio;
                 caps[info.rotaId].total += volNovo - info.det.volumeTotal;
-                info.det.viagens      = viagensAjust;
-                info.det.volumeTotal  = volNovo;
+                info.det.viagens     = viagensAjust;
+                info.det.volumeTotal = volNovo;
             });
+
+            if (semDemanda.length > 0) {
+                const horasCada = horasRestantes / semDemanda.length;
+                semDemanda.forEach(info => {
+                    const viagensAjust = horasCada / info.cicloH;
+                    const volNovo = viagensAjust * info.volComboio;
+                    caps[info.rotaId].total += volNovo - info.det.volumeTotal;
+                    info.det.viagens     = viagensAjust;
+                    info.det.volumeTotal = volNovo;
+                });
+            }
+        });
+
+        // Cap de volume pulmão: rotas com origemIsPulmão não podem transportar mais do
+        // que o total entregue ao pulmão pelas rotas entregadoras (destinoIsPulmao=true)
+        // no mesmo mês/cenário. Escala viagens proporcionalmente quando necessário.
+        rotasAtivas.forEach(rota => {
+            if (!rota.origemIsPulmao || !caps[rota.id]) return;
+            const rotasEntregadoras = rotasAtivas.filter(r =>
+                r.id !== rota.id &&
+                r.destinoIsPulmao &&
+                r.cidadeDestinoId === rota.cidadeOrigemId &&
+                rotaAtivaNoMes(r, mes)
+            );
+            const totalNoPulmao = rotasEntregadoras.reduce(
+                (soma, r) => soma + (caps[r.id]?.total || 0), 0
+            );
+            const capAtual = caps[rota.id].total;
+            if (capAtual > totalNoPulmao) {
+                const fator = totalNoPulmao > 0 ? totalNoPulmao / capAtual : 0;
+                caps[rota.id].total = totalNoPulmao;
+                caps[rota.id].detalhes.forEach(det => {
+                    det.viagens      = (det.viagens      || 0) * fator;
+                    det.volumeTotal  = (det.volumeTotal  || 0) * fator;
+                });
+            }
         });
 
         return { capacidades: caps, conflitos };
