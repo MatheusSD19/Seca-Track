@@ -2107,7 +2107,8 @@
         const barcAtivas = barcacas.filter(b => b.ativo !== false);
 
         CENARIOS.forEach(cen => {
-            const v = getVariaveisCenario(cen.id);
+            const sid = String(cen.id); // normalize ID to string
+            const v   = getVariaveisCenario(cen.id);
             const serie = gerarSerieDiariaRio(rioSel, cen.id, proj);
             if (!serie.length) return;
 
@@ -2116,8 +2117,8 @@
                 encontrarPeriodosRestricao(serie, nivelMin).forEach(p => {
                     resultados.push({
                         label: `${cen.nome} · ${emp.nome}`,
-                        tipo: 'Empurrador', cenario: cen.nome, cenarioId: cen.id,
-                        nome: emp.nome, cor: cen.cor,
+                        tipo: 'Empurrador', cenario: cen.nome, cenarioId: sid,
+                        nome: emp.nome, cor: cen.cor, reduz: false,
                         inicio: p.inicio, fim: p.fim, dias: p.dias, nivelMin
                     });
                 });
@@ -2127,26 +2128,27 @@
                 const nivelMinStop  = barc.caladoMin - v.abaco + v.faq;
                 const nivelMinReduz = barc.caladoMax ? (barc.caladoMax - v.abaco + v.faq) : nivelMinStop;
 
+                // Parada completa
                 encontrarPeriodosRestricao(serie, nivelMinStop).forEach(p => {
                     resultados.push({
                         label: `${cen.nome} · ${barc.nome} (parado)`,
-                        tipo: 'Barcaça (parado)', cenario: cen.nome, cenarioId: cen.id,
-                        nome: barc.nome, cor: cen.cor,
+                        tipo: 'Barcaça (parado)', cenario: cen.nome, cenarioId: sid,
+                        nome: barc.nome, cor: cen.cor, reduz: false,
                         inicio: p.inicio, fim: p.fim, dias: p.dias, nivelMin: nivelMinStop
                     });
                 });
 
+                // Redução de calado (navega abaixo do calado máximo)
                 if (barc.caladoMax && nivelMinReduz > nivelMinStop + 0.01) {
-                    // Períodos onde apenas reduz calado (above stop, below max)
                     const serieReduz = serie.map(s => ({
                         date: s.date,
-                        nivel: s.nivel < nivelMinStop ? nivelMinReduz : s.nivel // mask full-stop periods
+                        nivel: s.nivel < nivelMinStop ? nivelMinReduz : s.nivel // mascara períodos de parada total
                     }));
                     encontrarPeriodosRestricao(serieReduz, nivelMinReduz).forEach(p => {
                         resultados.push({
                             label: `${cen.nome} · ${barc.nome} (reduz calado)`,
-                            tipo: 'Barcaça (reduz calado)', cenario: cen.nome, cenarioId: cen.id,
-                            nome: barc.nome, cor: cen.cor + '99',
+                            tipo: 'Barcaça (reduz calado)', cenario: cen.nome, cenarioId: sid,
+                            nome: barc.nome, cor: cen.cor, reduz: true,
                             inicio: p.inicio, fim: p.fim, dias: p.dias, nivelMin: nivelMinReduz
                         });
                     });
@@ -2197,8 +2199,9 @@
         _reRenderTempoParada();
     }
     function toggleTpCenario(id) {
-        if (tpCenariosHidden.has(id)) tpCenariosHidden.delete(id);
-        else tpCenariosHidden.add(id);
+        const sid = String(id); // normalize: custom IDs are numbers passed as strings from onclick
+        if (tpCenariosHidden.has(sid)) tpCenariosHidden.delete(sid);
+        else tpCenariosHidden.add(sid);
         _reRenderTempoParada();
     }
 
@@ -2232,10 +2235,11 @@
         const el = document.getElementById('tpCenariosBtns');
         if (!el) return;
         el.innerHTML = _tpGetAllCenarios().map(c => {
-            const ativo  = !tpCenariosHidden.has(c.id);
-            const style  = ativo ? `background:${c.cor};border-color:${c.cor};color:white` : '';
-            const cls    = ativo ? '' : 'bg-gray-100 border-gray-300 text-gray-400';
-            return `<button onclick="toggleTpCenario('${c.id}')"
+            const sid   = String(c.id); // always compare as string
+            const ativo = !tpCenariosHidden.has(sid);
+            const style = ativo ? `background:${c.cor};border-color:${c.cor};color:white` : '';
+            const cls   = ativo ? '' : 'bg-gray-100 border-gray-300 text-gray-400';
+            return `<button onclick="toggleTpCenario('${sid}')"
                 class="text-xs px-3 py-0.5 rounded-full border font-medium cursor-pointer transition-all ${cls}" style="${style}">${c.nome}</button>`;
         }).join('');
     }
@@ -2286,7 +2290,11 @@
 
             const labels   = dadosFiltrados.map(d => d.label);
             const datasPts = dadosFiltrados.map(d => [d.inicio.getTime(), d.fim.getTime()]);
-            const bgCols   = dadosFiltrados.map(d => (d.cor.length > 7 ? d.cor.substring(0,7) : d.cor) + 'cc');
+            // reduz:true → lighter fill; reduz:false → solid fill
+            const bgCols   = dadosFiltrados.map(d => {
+                const cb = d.cor.length > 7 ? d.cor.substring(0,7) : d.cor;
+                return cb + (d.reduz ? '55' : 'cc');
+            });
             const bdCols   = dadosFiltrados.map(d =>  d.cor.length > 7 ? d.cor.substring(0,7) : d.cor);
             const ref      = dadosFiltrados; // closure for inline plugin
 
@@ -2340,10 +2348,34 @@
                             const bar = meta.data[i];
                             if (!bar) return;
                             const bw = Math.abs(bar.x - bar.base);
+                            const bh = bar.height || 20;
+                            const left  = Math.min(bar.x, bar.base);
+                            const top   = bar.y - bh / 2;
+
+                            // diagonal hatching for "reduz calado" bars
+                            if (d.reduz && bw > 4) {
+                                const cb = (d.cor.length > 7 ? d.cor.substring(0,7) : d.cor);
+                                ctx2.save();
+                                ctx2.beginPath();
+                                ctx2.rect(left, top, bw, bh);
+                                ctx2.clip();
+                                ctx2.strokeStyle = cb;
+                                ctx2.lineWidth = 1.2;
+                                ctx2.globalAlpha = 0.45;
+                                const step = 7;
+                                for (let x = left - bh; x < left + bw + bh; x += step) {
+                                    ctx2.beginPath();
+                                    ctx2.moveTo(x, top);
+                                    ctx2.lineTo(x + bh, top + bh);
+                                    ctx2.stroke();
+                                }
+                                ctx2.restore();
+                            }
+
                             if (bw < 18) return;
-                            const cx = (bar.x + bar.base) / 2; // true center of floating bar
+                            const cx = (bar.x + bar.base) / 2;
                             ctx2.save();
-                            ctx2.fillStyle = 'white';
+                            ctx2.fillStyle = d.reduz ? (d.cor.length > 7 ? d.cor.substring(0,7) : d.cor) : 'white';
                             ctx2.font = 'bold 11px Inter, sans-serif';
                             ctx2.textAlign = 'center';
                             ctx2.textBaseline = 'middle';
@@ -2362,13 +2394,16 @@
                 ? dadosFiltrados.map(d => {
                     const cb   = d.cor.length > 7 ? d.cor.substring(0,7) : d.cor;
                     const retoma = new Date(d.fim.getTime() + 86400000);
+                    const tipoBadge = d.reduz
+                        ? `<span class="badge" style="background:${cb}22;color:${cb};border:1px dashed ${cb};font-style:italic">↓ Reduz calado</span>`
+                        : `<span class="badge" style="background:${cb}33;color:${cb};border:1px solid ${cb}66">${d.tipo === 'Empurrador' ? 'Empurrador' : '⛔ Parado'}</span>`;
                     return `<tr>
                         <td><span class="badge" style="background:${cb}22;color:${cb};border:1px solid ${cb}44">${d.cenario}</span></td>
-                        <td class="text-xs text-gray-600">${d.tipo}</td>
+                        <td class="text-xs">${tipoBadge}</td>
                         <td class="font-medium">${d.nome}</td>
                         <td>${formatDateShort(d.inicio)}</td>
                         <td>${formatDateShort(retoma)}</td>
-                        <td class="font-bold text-orange-600">${d.dias}</td>
+                        <td class="font-bold" style="color:${d.reduz ? '#d97706' : '#dc2626'}">${d.dias}</td>
                     </tr>`;
                 }).join('')
                 : '<tr><td colspan="6" class="text-center text-gray-400 py-4">Nenhuma restrição projetada para a seleção atual.</td></tr>';
@@ -2438,8 +2473,8 @@
             const cls = ativo
                 ? 'text-xs px-2 py-1 rounded-full border font-medium cursor-pointer transition-all bg-purple-100 border-purple-400 text-purple-700'
                 : 'text-xs px-2 py-1 rounded-full border font-medium cursor-pointer transition-all bg-gray-100 border-gray-300 text-gray-500';
-            const caladoOpMin = (a.calado + variaveis.abaco - variaveis.faq).toFixed(2);
-            return `<button class="${cls}" onclick="toggleCalado('${a.key}')" title="${a.grupo}: ${a.nome} — cal. op. mín. ${caladoOpMin} m">${a.nome} ≥${caladoOpMin} m</button>`;
+            const caladoOpMin = (a.calado - variaveis.abaco + variaveis.faq).toFixed(2);
+            return `<button class="${cls}" onclick="toggleCalado('${a.key}')" title="${a.grupo}: ${a.nome} — nív. mín. ${caladoOpMin} m">${a.nome}</button>`;
         }).join('');
         lucide.createIcons();
     }
