@@ -326,8 +326,8 @@
                         <thead>
                             <tr>
                                 <th>Rota</th><th>Rio</th>
-                                <th>Viagem (h)</th><th>t/h Carga</th><th>t/h Descarga</th>
-                                <th>Cidades</th><th>Meses Ativos</th>
+                                <th>Viagem (h)</th>
+                                <th>Origem → Destino</th><th>Meses Ativos</th>
                                 <th>Frota</th>
                                 <th>Ações</th>
                             </tr>
@@ -336,14 +336,14 @@
                     </table>
                 </div>
                 <p class="text-xs text-gray-500 mt-3">
-                    Ciclo do empurrador = carga (vol÷t/h) + viagem ida+volta + descarga (vol÷t/h) + espera. As viagens possíveis no mês são calculadas automaticamente com base no calado previsto.
+                    Ciclo do empurrador = carga (vol ÷ vazão da cidade de origem) + viagem ida+volta + descarga (vol ÷ t/h elevação) + espera. Origem/destino marcados como pulmão têm tempo de carga/descarga zerado. As viagens possíveis no mês são calculadas automaticamente com base no calado previsto.
                 </p>
             </div>
             <div class="grid-2">
                 <div class="card p-6">
                     <div class="flex justify-between items-center mb-4">
                         <h2 class="text-lg font-semibold flex items-center gap-2">
-                            <i data-lucide="building-2" class="w-5 h-5 text-blue-600"></i> Demandas por Cidade
+                            <i data-lucide="building-2" class="w-5 h-5 text-blue-600"></i> Cadastro de Cidades
                         </h2>
                         <button onclick="openModal('cidadeDemanda')" class="btn-primary text-sm flex items-center gap-1">
                             <i data-lucide="plus" class="w-4 h-4"></i> Nova Cidade
@@ -351,7 +351,7 @@
                     </div>
                     <div class="table-container">
                         <table>
-                            <thead><tr><th>Cidade</th><th>Meta Anual (t)</th><th>Ações</th></tr></thead>
+                            <thead><tr><th>Cidade</th><th>Tipo</th><th>Meta Anual (t)</th><th>Ações</th></tr></thead>
                             <tbody id="tbodyCidadesDemanda"></tbody>
                         </table>
                     </div>
@@ -595,20 +595,44 @@
                         <select id="rotaRio" class="input-field"><option value="">Selecione...</option></select></div>
                 </div>
 
-                <div class="grid-4">
+                <div class="grid-2">
                     <div><label class="block text-sm font-medium text-gray-700 mb-1">Tempo de Viagem (h)</label>
                         <input type="number" id="rotaTempoViagem" class="input-field" step="0.1" placeholder="Ida+volta" value="72"></div>
-                    <div><label class="block text-sm font-medium text-gray-700 mb-1">t/h Originação</label>
-                        <input type="number" id="rotaTonHoraOrigem" class="input-field" step="1" placeholder="Carga" value="1000"></div>
-                    <div><label class="block text-sm font-medium text-gray-700 mb-1">t/h Elevação</label>
-                        <input type="number" id="rotaTonHoraDestino" class="input-field" step="1" placeholder="Descarga" value="1000"></div>
                     <div><label class="block text-sm font-medium text-gray-700 mb-1">Tempo de Espera (h)</label>
                         <input type="number" id="rotaTempoEspera" class="input-field" step="0.5" placeholder="Fila" value="0"></div>
                 </div>
 
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Cidades Atendidas por esta Rota *</label>
-                    <div id="rotaCidadesGrid" class="grid grid-cols-1 md:grid-cols-2 gap-2"></div>
+                <div class="space-y-3">
+                    <label class="block text-sm font-medium text-gray-700">Origem e Destino da Rota *</label>
+                    <div class="border border-gray-200 rounded-lg p-3 space-y-2">
+                        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Cidade de Origem</label>
+                        <select id="rotaCidadeOrigemId" class="input-field" onchange="onRotaOrigemChange()">
+                            <option value="">Selecione a cidade de origem...</option>
+                        </select>
+                        <div id="rotaOrigemPulmaoSection" class="hidden">
+                            <label class="flex items-center gap-2 text-sm cursor-pointer text-gray-700">
+                                <input type="checkbox" id="rotaOrigemIsPulmao">
+                                Esta origem é <strong>pulmão</strong> (barcaças chegam carregadas — sem tempo de carregamento)
+                            </label>
+                        </div>
+                    </div>
+                    <div class="border border-gray-200 rounded-lg p-3 space-y-2">
+                        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Cidade de Destino</label>
+                        <select id="rotaCidadeDestinoId" class="input-field" onchange="onRotaDestinoChange()">
+                            <option value="">Selecione a cidade de destino...</option>
+                        </select>
+                        <div id="rotaDestinoTipoSection" class="hidden">
+                            <p class="text-xs font-medium text-gray-600 mb-1">Tipo de entrega neste destino:</p>
+                            <div class="flex gap-4">
+                                <label class="flex items-center gap-2 text-sm cursor-pointer">
+                                    <input type="radio" name="rotaDestinoTipo" value="final" checked> Destino Final
+                                </label>
+                                <label class="flex items-center gap-2 text-sm cursor-pointer">
+                                    <input type="radio" name="rotaDestinoTipo" value="pulmao"> Pulmão (transferência)
+                                </label>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div>
@@ -622,7 +646,7 @@
                         <button type="button" onclick="addEmpurradorRota()" class="text-sm text-blue-600 hover:text-blue-800">+ Adicionar Empurrador</button>
                     </div>
                     <div id="empurradoresRota" class="space-y-2"></div>
-                    <p class="text-xs text-gray-500 mt-1">Selecione o empurrador e o tipo de barcaça que ele opera nesta rota. As viagens possíveis no mês são calculadas automaticamente a partir do ciclo.</p>
+                    <p class="text-xs text-gray-500 mt-1">Selecione o empurrador e o tipo de barcaça que ele opera nesta rota. O ciclo = carga (vazão da cidade de origem) + viagem + descarga (t/h elevação) + espera. As viagens possíveis no mês são calculadas automaticamente.</p>
                 </div>
 
                 <div class="flex gap-3 pt-4">
@@ -647,8 +671,45 @@
                     <input type="text" id="cidadeDemandaNome" class="input-field" placeholder="Ex: Manaus">
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Meta mensal de volume (t)</label>
-                    <div id="cidadeMetasGrid" class="grid grid-cols-3 md:grid-cols-6 gap-2"></div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Características</label>
+                    <div class="space-y-2">
+                        <div class="border border-gray-200 rounded-lg p-3">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="cidadeIsDestino" onchange="toggleCidadeDestino()">
+                                <span class="text-sm font-medium text-gray-700">Destino</span>
+                                <span class="text-xs text-gray-400">— recebe mercadoria com meta de volume</span>
+                            </label>
+                            <div id="cidadeDestinoSection" class="mt-3 hidden space-y-3">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Vazão de descarga — t/h Elevação</label>
+                                    <input type="number" id="cidadeTonHoraElevacao" class="input-field" step="1" placeholder="Ex: 1000">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Meta mensal de volume (t)</label>
+                                    <div id="cidadeMetasGrid" class="grid grid-cols-3 md:grid-cols-6 gap-2"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="border border-gray-200 rounded-lg p-3">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="cidadeIsOriginacao" onchange="toggleCidadeOriginacao()">
+                                <span class="text-sm font-medium text-gray-700">Originação</span>
+                                <span class="text-xs text-gray-400">— ponto de carregamento de barcaças</span>
+                            </label>
+                            <div id="cidadeOriginacaoSection" class="mt-3 hidden">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Vazão de carregamento (t/h)</label>
+                                <input type="number" id="cidadeTonHoraOriginacao" class="input-field" step="1" placeholder="Ex: 1000">
+                            </div>
+                        </div>
+                        <div class="border border-gray-200 rounded-lg p-3">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="cidadeIsPulmao">
+                                <span class="text-sm font-medium text-gray-700">Pulmão</span>
+                                <span class="text-xs text-gray-400">— ponto de transferência estratégico entre empurradores</span>
+                            </label>
+                            <p class="text-xs text-gray-400 mt-1 ml-6">Barcaças chegam já carregadas e partem com o próximo empurrador sem tempo de carga/descarga.</p>
+                        </div>
+                    </div>
                 </div>
                 <div class="flex gap-3 pt-4">
                     <button onclick="saveCidadeDemanda()" class="btn-primary flex-1">Salvar</button>
@@ -914,6 +975,16 @@
                 <input type="number" id="cidadeMeta${m}" class="input-field text-sm" placeholder="t">
             </div>
         `).join('');
+    }
+
+    function toggleCidadeDestino() {
+        const checked = document.getElementById('cidadeIsDestino').checked;
+        document.getElementById('cidadeDestinoSection').classList.toggle('hidden', !checked);
+    }
+
+    function toggleCidadeOriginacao() {
+        const checked = document.getElementById('cidadeIsOriginacao').checked;
+        document.getElementById('cidadeOriginacaoSection').classList.toggle('hidden', !checked);
     }
 
     function buildRotaMesesAtivosGrid() {
@@ -1822,21 +1893,17 @@
                 const r = rotas.find(x => x.id === id);
                 document.getElementById('rotaNome').value = r.nome;
                 document.getElementById('rotaRio').value  = r.rio;
-                document.getElementById('rotaTempoViagem').value    = r.tempoViagemH ?? '';
-                document.getElementById('rotaTonHoraOrigem').value  = r.tonHoraOrigem ?? '';
-                document.getElementById('rotaTonHoraDestino').value = r.tonHoraDestino ?? '';
-                document.getElementById('rotaTempoEspera').value    = r.tempoEsperaH ?? 0;
-                renderRotaCidadesSelector(r.cidadesAtendidas || []);
+                document.getElementById('rotaTempoViagem').value = r.tempoViagemH ?? '';
+                document.getElementById('rotaTempoEspera').value = r.tempoEsperaH ?? 0;
+                renderRotaOrigemDestino(r.cidadeOrigemId || '', r.cidadeDestinoId || '', r.origemIsPulmao || false, r.destinoIsPulmao || false);
                 setRotaMesesAtivosInputs(r.mesesAtivos || Array(12).fill(true));
                 renderEmpurradoresRota(r.empurradores || []);
             } else {
                 document.getElementById('rotaNome').value = '';
                 document.getElementById('rotaRio').value  = '';
-                document.getElementById('rotaTempoViagem').value    = 72;
-                document.getElementById('rotaTonHoraOrigem').value  = 1000;
-                document.getElementById('rotaTonHoraDestino').value = 1000;
-                document.getElementById('rotaTempoEspera').value    = 0;
-                renderRotaCidadesSelector([]);
+                document.getElementById('rotaTempoViagem').value = 72;
+                document.getElementById('rotaTempoEspera').value = 0;
+                renderRotaOrigemDestino('', '', false, false);
                 setRotaMesesAtivosInputs(Array(12).fill(true));
                 renderEmpurradoresRota([]);
             }
@@ -1845,15 +1912,32 @@
         } else if (tipo === 'cidadeDemanda') {
             document.getElementById('tituloCidadeDemanda').textContent = id ? 'Editar Cidade' : 'Nova Cidade';
             document.getElementById('cidadeDemandaId').value = id || '';
+            const isDestino    = document.getElementById('cidadeIsDestino');
+            const isOriginacao = document.getElementById('cidadeIsOriginacao');
+            const isPulmao     = document.getElementById('cidadeIsPulmao');
             if (id) {
                 const c = cidadesDemanda.find(x => x.id === id);
                 document.getElementById('cidadeDemandaNome').value = c.nome || '';
+                isDestino.checked    = !!c.isDestino;
+                isOriginacao.checked = !!c.isOriginacao;
+                isPulmao.checked     = !!c.isPulmao;
+                document.getElementById('cidadeDestinoSection').classList.toggle('hidden', !c.isDestino);
+                document.getElementById('cidadeOriginacaoSection').classList.toggle('hidden', !c.isOriginacao);
+                document.getElementById('cidadeTonHoraOriginacao').value = c.tonHoraOriginacao || '';
+                document.getElementById('cidadeTonHoraElevacao').value   = c.tonHoraElevacao   || '';
                 (c.metas || []).forEach((v, i) => {
                     const inp = document.getElementById(`cidadeMeta${MESES[i]}`);
                     if (inp) inp.value = v || '';
                 });
             } else {
                 document.getElementById('cidadeDemandaNome').value = '';
+                isDestino.checked = false;
+                isOriginacao.checked = false;
+                isPulmao.checked = false;
+                document.getElementById('cidadeDestinoSection').classList.add('hidden');
+                document.getElementById('cidadeOriginacaoSection').classList.add('hidden');
+                document.getElementById('cidadeTonHoraOriginacao').value = '';
+                document.getElementById('cidadeTonHoraElevacao').value   = '';
                 MESES.forEach(m => {
                     const inp = document.getElementById(`cidadeMeta${m}`);
                     if (inp) inp.value = '';
@@ -2081,19 +2165,45 @@
         sel.innerHTML = '<option value="">Selecione...</option>' + rios.map(r => `<option value="${r}">${r}</option>`).join('');
     }
 
-    function renderRotaCidadesSelector(selected = []) {
-        const el = document.getElementById('rotaCidadesGrid');
-        if (!el) return;
-        if (cidadesDemanda.length === 0) {
-            el.innerHTML = '<p class="text-xs text-gray-400">Cadastre cidades de demanda antes de salvar a rota.</p>';
-            return;
-        }
-        el.innerHTML = cidadesDemanda.map(c => `
-            <label class="flex items-center gap-2 text-sm border rounded px-2 py-1">
-                <input type="checkbox" class="rota-cidade-check" value="${c.id}" ${selected.includes(c.id) ? 'checked' : ''}>
-                <span>${c.nome}</span>
-            </label>
-        `).join('');
+    function renderRotaOrigemDestino(origemId = '', destinoId = '', origemIsPulmao = false, destinoIsPulmao = false) {
+        const selOrigem  = document.getElementById('rotaCidadeOrigemId');
+        const selDestino = document.getElementById('rotaCidadeDestinoId');
+        if (!selOrigem || !selDestino) return;
+
+        const opcoes = cidadesDemanda.length === 0
+            ? '<option value="">Nenhuma cidade cadastrada</option>'
+            : cidadesDemanda.map(c => {
+                const tags = [c.isOriginacao && 'Orig.', c.isDestino && 'Dest.', c.isPulmao && 'Pulm.'].filter(Boolean).join('/');
+                const label = tags ? `${c.nome} [${tags}]` : c.nome;
+                return `<option value="${c.id}">${label}</option>`;
+            }).join('');
+
+        selOrigem.innerHTML  = '<option value="">Selecione a cidade de origem...</option>'  + opcoes;
+        selDestino.innerHTML = '<option value="">Selecione a cidade de destino...</option>' + opcoes;
+
+        if (origemId)  selOrigem.value  = origemId;
+        if (destinoId) selDestino.value = destinoId;
+
+        const origemSection  = document.getElementById('rotaOrigemPulmaoSection');
+        const destinoSection = document.getElementById('rotaDestinoTipoSection');
+        if (origemSection)  origemSection.classList.toggle('hidden', !origemId);
+        if (destinoSection) destinoSection.classList.toggle('hidden', !destinoId);
+
+        const chkPulmao = document.getElementById('rotaOrigemIsPulmao');
+        if (chkPulmao) chkPulmao.checked = origemIsPulmao;
+
+        const radios = document.querySelectorAll('input[name="rotaDestinoTipo"]');
+        radios.forEach(r => { r.checked = (r.value === (destinoIsPulmao ? 'pulmao' : 'final')); });
+    }
+
+    function onRotaOrigemChange() {
+        const val = document.getElementById('rotaCidadeOrigemId').value;
+        document.getElementById('rotaOrigemPulmaoSection').classList.toggle('hidden', !val);
+    }
+
+    function onRotaDestinoChange() {
+        const val = document.getElementById('rotaCidadeDestinoId').value;
+        document.getElementById('rotaDestinoTipoSection').classList.toggle('hidden', !val);
     }
 
     function getRotaMesesAtivosFromInputs() {
@@ -2211,15 +2321,24 @@
         const id   = document.getElementById('rotaId').value;
         const nome = document.getElementById('rotaNome').value.trim();
         const rio  = document.getElementById('rotaRio').value;
-        const tempoViagemH    = parseFloat(document.getElementById('rotaTempoViagem').value)    || 0;
-        const tonHoraOrigem   = parseFloat(document.getElementById('rotaTonHoraOrigem').value)  || 0;
-        const tonHoraDestino  = parseFloat(document.getElementById('rotaTonHoraDestino').value) || 0;
-        const tempoEsperaH    = parseFloat(document.getElementById('rotaTempoEspera').value)    || 0;
+        const tempoViagemH = parseFloat(document.getElementById('rotaTempoViagem').value) || 0;
+        const tempoEsperaH = parseFloat(document.getElementById('rotaTempoEspera').value) || 0;
+
+        const cidadeOrigemId  = parseFloat(document.getElementById('rotaCidadeOrigemId').value)  || null;
+        const cidadeDestinoId = parseFloat(document.getElementById('rotaCidadeDestinoId').value) || null;
+        const origemIsPulmao  = document.getElementById('rotaOrigemIsPulmao').checked;
+        const destinoTipo     = document.querySelector('input[name="rotaDestinoTipo"]:checked')?.value || 'final';
+        const destinoIsPulmao      = destinoTipo === 'pulmao';
 
         if (!nome || !rio) { alert('Nome e rio são obrigatórios.'); return; }
-        if (tonHoraOrigem <= 0 || tonHoraDestino <= 0) { alert('Informe taxas de originação e elevação maiores que zero.'); return; }
+        if (!cidadeOrigemId)  { alert('Selecione a cidade de origem.'); return; }
+        if (!cidadeDestinoId) { alert('Selecione a cidade de destino.'); return; }
+        const cidadeDestValidacao = cidadesDemanda.find(c => c.id === cidadeDestinoId);
+        if (!destinoIsPulmao && cidadeDestValidacao?.isDestino && !(cidadeDestValidacao?.tonHoraElevacao > 0)) {
+            alert('A cidade de destino não tem t/h Elevação cadastrada. Edite o cadastro da cidade.'); return;
+        }
 
-        const cidadesAtendidas = [...document.querySelectorAll('.rota-cidade-check:checked')].map(el => parseFloat(el.value));
+        const cidadesAtendidas = [...new Set([cidadeOrigemId, cidadeDestinoId])];
         const mesesAtivos = getRotaMesesAtivosFromInputs();
 
         const rotaEmps = [];
@@ -2258,7 +2377,9 @@
         const rota = {
             id: id ? parseFloat(id) : Date.now() + Math.random(),
             nome, rio,
-            tempoViagemH, tonHoraOrigem, tonHoraDestino, tempoEsperaH,
+            tempoViagemH, tempoEsperaH,
+            cidadeOrigemId, origemIsPulmao,
+            cidadeDestinoId, destinoIsPulmao,
             cidadesAtendidas,
             mesesAtivos,
             empurradores: rotaEmps
@@ -2272,6 +2393,17 @@
         saveToLocalStorage();
         renderTabelaRotas();
         closeModal('rota');
+    }
+
+    function duplicarRota(id) {
+        const original = rotas.find(r => r.id === id);
+        if (!original) return;
+        const copia = JSON.parse(JSON.stringify(original));
+        copia.id   = Date.now() + Math.random();
+        copia.nome = `${original.nome} (cópia)`;
+        rotas.push(copia);
+        saveToLocalStorage();
+        renderTabelaRotas();
     }
 
     function deleteRota(id) {
@@ -2291,7 +2423,14 @@
             return;
         }
         rotas.forEach(r => {
-            const cidadesTxt = (r.cidadesAtendidas || []).map(id => cidadesDemanda.find(c => c.id === id)?.nome || '?').join(', ') || '-';
+            const nomeOrigem  = cidadesDemanda.find(c => c.id === r.cidadeOrigemId)?.nome
+                || (r.cidadesAtendidas?.length ? cidadesDemanda.find(c => c.id === r.cidadesAtendidas[0])?.nome : null)
+                || '?';
+            const nomeDestino = cidadesDemanda.find(c => c.id === r.cidadeDestinoId)?.nome
+                || (r.cidadesAtendidas?.length > 1 ? cidadesDemanda.find(c => c.id === r.cidadesAtendidas[1])?.nome : null)
+                || '?';
+            const origemLabel  = r.origemIsPulmao  ? `${nomeOrigem} <span class="text-orange-600 text-xs">(pulmão)</span>` : nomeOrigem;
+            const destinoLabel = r.destinoIsPulmao ? `${nomeDestino} <span class="text-orange-600 text-xs">(pulmão)</span>` : nomeDestino;
             const mesesAtivosTxt = (r.mesesAtivos || []).map((v, i) => v ? MESES[i] : null).filter(Boolean);
             const frota = (r.empurradores||[]).map(it => {
                 const e = empurradores.find(x => x.id === it.empurradorId);
@@ -2307,14 +2446,13 @@
                 <td class="font-medium">${r.nome}</td>
                 <td>${r.rio}</td>
                 <td>${(r.tempoViagemH||0).toFixed(1)} h</td>
-                <td>${(r.tonHoraOrigem||0).toLocaleString('pt-BR')}</td>
-                <td>${(r.tonHoraDestino||0).toLocaleString('pt-BR')}</td>
-                <td>${cidadesTxt}</td>
+                <td class="text-sm">${origemLabel} → ${destinoLabel}</td>
                 <td class="text-xs">${mesesAtivosTxt.length === 12 ? 'Ano inteiro' : mesesAtivosTxt.join(', ')}</td>
                 <td class="text-xs">${frota || '-'}</td>
                 <td class="flex gap-2">
-                    <button onclick="openModal('rota', ${r.id})" class="text-blue-600 hover:text-blue-800"><i data-lucide="edit" class="w-4 h-4"></i></button>
-                    <button onclick="deleteRota(${r.id})" class="text-red-600 hover:text-red-800"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                    <button onclick="duplicarRota(${r.id})" class="text-gray-500 hover:text-gray-700" title="Duplicar"><i data-lucide="copy" class="w-4 h-4"></i></button>
+                    <button onclick="openModal('rota', ${r.id})" class="text-blue-600 hover:text-blue-800" title="Editar"><i data-lucide="edit" class="w-4 h-4"></i></button>
+                    <button onclick="deleteRota(${r.id})" class="text-red-600 hover:text-red-800" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                 </td>`;
             tbody.appendChild(tr);
         });
@@ -2325,11 +2463,19 @@
         const id = document.getElementById('cidadeDemandaId').value;
         const nome = document.getElementById('cidadeDemandaNome').value.trim();
         if (!nome) { alert('Informe o nome da cidade.'); return; }
+        const isDestino    = document.getElementById('cidadeIsDestino').checked;
+        const isOriginacao = document.getElementById('cidadeIsOriginacao').checked;
+        const isPulmao     = document.getElementById('cidadeIsPulmao').checked;
+        if (!isDestino && !isOriginacao && !isPulmao) { alert('Marque ao menos uma característica para a cidade.'); return; }
+        const tonHoraOriginacao = isOriginacao ? (parseFloat(document.getElementById('cidadeTonHoraOriginacao').value) || 0) : null;
+        if (isOriginacao && !tonHoraOriginacao) { alert('Informe a vazão de carregamento (t/h) para a originação.'); return; }
+        const tonHoraElevacao = isDestino ? (parseFloat(document.getElementById('cidadeTonHoraElevacao').value) || 0) : null;
+        if (isDestino && !tonHoraElevacao) { alert('Informe a vazão de descarga (t/h Elevação) para o destino.'); return; }
         const metas = MESES.map(m => {
-            const v = parseFloat(document.getElementById(`cidadeMeta${m}`).value);
+            const v = parseFloat(document.getElementById(`cidadeMeta${m}`)?.value);
             return isNaN(v) ? 0 : v;
         });
-        const item = { id: id ? parseFloat(id) : Date.now() + Math.random(), nome, metas };
+        const item = { id: id ? parseFloat(id) : Date.now() + Math.random(), nome, isDestino, isOriginacao, isPulmao, tonHoraOriginacao, tonHoraElevacao, metas };
         if (id) {
             const i = cidadesDemanda.findIndex(c => c.id == id);
             cidadesDemanda[i] = item;
@@ -2352,15 +2498,21 @@
         if (!tbody) return;
         tbody.innerHTML = '';
         if (cidadesDemanda.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-gray-400 py-4">Nenhuma cidade cadastrada</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-gray-400 py-4">Nenhuma cidade cadastrada</td></tr>';
             return;
         }
         cidadesDemanda.forEach(c => {
             const metaAnual = (c.metas || []).reduce((s, v) => s + (v || 0), 0);
+            const badges = [
+                c.isDestino    && `<span class="inline-block text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">Destino ${c.tonHoraElevacao ? (c.tonHoraElevacao||0).toLocaleString('pt-BR')+'t/h↓' : ''}</span>`,
+                c.isOriginacao && `<span class="inline-block text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700">Orig. ${(c.tonHoraOriginacao||0).toLocaleString('pt-BR')} t/h↑</span>`,
+                c.isPulmao     && `<span class="inline-block text-xs px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">Pulmão</span>`,
+            ].filter(Boolean).join(' ');
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td class="font-medium">${c.nome}</td>
-                <td>${Math.round(metaAnual).toLocaleString('pt-BR')}</td>
+                <td>${badges || '<span class="text-xs text-gray-400">—</span>'}</td>
+                <td>${c.isDestino ? Math.round(metaAnual).toLocaleString('pt-BR') : '<span class="text-xs text-gray-400">—</span>'}</td>
                 <td class="flex gap-2">
                     <button onclick="openModal('cidadeDemanda', ${c.id})" class="text-blue-600 hover:text-blue-800"><i data-lucide="edit" class="w-4 h-4"></i></button>
                     <button onclick="deleteCidadeDemanda(${c.id})" class="text-red-600 hover:text-red-800"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
@@ -2384,6 +2536,17 @@
         saveToLocalStorage();
         renderTabelaCenariosRota();
         closeModal('cenarioRota');
+    }
+
+    function duplicarCenarioRota(id) {
+        const original = cenariosRotas.find(c => c.id === id);
+        if (!original) return;
+        const copia = JSON.parse(JSON.stringify(original));
+        copia.id   = Date.now() + Math.random();
+        copia.nome = `${original.nome} (cópia)`;
+        cenariosRotas.push(copia);
+        saveToLocalStorage();
+        renderTabelaCenariosRota();
     }
 
     function deleteCenarioRota(id) {
@@ -2416,8 +2579,9 @@
                 <td class="font-medium">${c.nome}</td>
                 <td class="text-xs">${nomesRotas || '-'}</td>
                 <td class="flex gap-2">
-                    <button onclick="openModal('cenarioRota', ${c.id})" class="text-blue-600 hover:text-blue-800"><i data-lucide="edit" class="w-4 h-4"></i></button>
-                    <button onclick="deleteCenarioRota(${c.id})" class="text-red-600 hover:text-red-800"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                    <button onclick="duplicarCenarioRota(${c.id})" class="text-gray-500 hover:text-gray-700" title="Duplicar"><i data-lucide="copy" class="w-4 h-4"></i></button>
+                    <button onclick="openModal('cenarioRota', ${c.id})" class="text-blue-600 hover:text-blue-800" title="Editar"><i data-lucide="edit" class="w-4 h-4"></i></button>
+                    <button onclick="deleteCenarioRota(${c.id})" class="text-red-600 hover:text-red-800" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                 </td>`;
             tbody.appendChild(tr);
         });
@@ -2617,13 +2781,33 @@
             viagens:0, volumeTotal:0
         };
 
+        // Se a origem é pulmão, as barcaças foram carregadas por outra rota sob condições
+        // diferentes de calado. Buscamos automaticamente a(s) rota(s) entregadora(s)
+        // (aquelas cujo destino é esta cidade pulmão) e usamos o nível do rio delas
+        // no mesmo mês/cenário para calcular o volume. O calado do empurrador atual
+        // (caladoOp) continua sendo usado só para verificar se ele consegue navegar.
+        let caladoVolume = caladoOp;
+        if (rota.origemIsPulmao) {
+            const rotasEntregadoras = rotas.filter(r =>
+                r.id !== rota.id &&
+                r.cidadeDestinoId === rota.cidadeOrigemId &&
+                rotaAtivaNoMes(r, mes)
+            );
+            const niveisEntrega = rotasEntregadoras.map(r => {
+                const nivel = getProjecaoPorMes(r.rio)?.[mes]?.[cenario];
+                if (nivel == null) return null;
+                return nivel + v.abaco - v.faq;
+            }).filter(n => n !== null);
+            if (niveisEntrega.length > 0) caladoVolume = Math.min(...niveisEntrega);
+        }
+
         const composicaoDetalhada = composicao.map(c => {
             const tipo    = barcacas.find(b => b.id === c.tipoBarcacaId);
             const inativa = tipo && tipo.ativo === false;
-            const navega  = tipo && !inativa && caladoOp >= tipo.caladoMin;
-            // Calado real da barcaça: limitado pelo seu próprio máximo estrutural
+            const navega  = tipo && !inativa && caladoVolume >= tipo.caladoMin;
+            // Volume das barcaças calculado com o calado do ponto de carregamento real
             const caladoAdotado = navega
-                ? Math.min(Math.floor(caladoOp * 10) / 10, parseFloat(tipo.caladoMax))
+                ? Math.min(Math.floor(caladoVolume * 10) / 10, parseFloat(tipo.caladoMax))
                 : 0;
             const volUnit = navega ? calcularVolumeBarcaca(tipo, caladoAdotado) : 0;
             return { tipo, quantidade: c.quantidade, navega, inativa, caladoAdotado, volUnit, volSubtotal: volUnit * c.quantidade };
@@ -2636,8 +2820,12 @@
             viagens:0, volumeTotal:0
         };
 
-        const hCarga    = volComboio / (rota.tonHoraOrigem  || 1);
-        const hDescarga = volComboio / (rota.tonHoraDestino || 1);
+        const cidadeOrigem  = cidadesDemanda.find(c => c.id === rota.cidadeOrigemId);
+        const cidadeDestino = cidadesDemanda.find(c => c.id === rota.cidadeDestinoId);
+        const tonHoraOrigem   = cidadeOrigem?.tonHoraOriginacao  || rota.tonHoraOrigem  || 1;
+        const tonHoraElevacao = cidadeDestino?.tonHoraElevacao   || rota.tonHoraDestino || 1;
+        const hCarga    = rota.origemIsPulmao  ? 0 : volComboio / tonHoraOrigem;
+        const hDescarga = rota.destinoIsPulmao ? 0 : volComboio / tonHoraElevacao;
         const cicloH    = hCarga + (rota.tempoViagemH || 0) + hDescarga + (rota.tempoEsperaH || 0);
         if (cicloH <= 0) return { emp, caladoOp, composicaoDetalhada, motivo:'Ciclo inviável', viagens:0, volumeTotal:0 };
 
@@ -2664,6 +2852,90 @@
         return { total, detalhes };
     }
 
+    // Calcula capacidades de todas as rotas no mês/cenário ajustando pushers compartilhados.
+    // Regra: pusher em N rotas tem suas horas redistribuídas — menor demanda atendida primeiro,
+    // potencial restante direcionado para a próxima (e assim por diante).
+    function calcularCapacidadesAjustadas(rotasAtivas, mes, ano, nivelRioMap, cenario) {
+        const totalHoras = 24 * diasDoMes(ano, mes);
+
+        // Cálculo bruto por rota (deep-copy para permitir mutação sem afetar modais de detalhe)
+        const caps = {};
+        rotasAtivas.forEach(rota => {
+            if (!rotaAtivaNoMes(rota, mes) || nivelRioMap[rota.id] === undefined) {
+                caps[rota.id] = { total: 0, detalhes: [] };
+                return;
+            }
+            caps[rota.id] = JSON.parse(JSON.stringify(
+                calcularCapacidadeRotaMes(rota, mes, ano, nivelRioMap[rota.id], cenario)
+            ));
+        });
+
+        // Monta mapa: empurradorId → [rotaIds onde está operacional neste mês]
+        const empRotasMap = {};
+        rotasAtivas.forEach(rota => {
+            if (!rotaAtivaNoMes(rota, mes)) return;
+            (rota.empurradores || []).forEach(({ empurradorId: eId }) => {
+                if (!eId) return;
+                const det = caps[rota.id]?.detalhes.find(d => d.emp?.id === eId);
+                if (!det?.ciclo) return; // empurrador inoperante nesta rota
+                if (!empRotasMap[eId]) empRotasMap[eId] = [];
+                if (!empRotasMap[eId].includes(rota.id)) empRotasMap[eId].push(rota.id);
+            });
+        });
+
+        const demandaMapa = calcularDemandaMensalPorRota(rotasAtivas, mes).porRota;
+        const conflitos   = [];
+
+        Object.entries(empRotasMap).forEach(([eIdStr, rotaIds]) => {
+            if (rotaIds.length < 2) return;
+            const eId = parseFloat(eIdStr);
+
+            const infos = rotaIds.map(rotaId => {
+                const det = caps[rotaId].detalhes.find(d => d.emp?.id === eId);
+                return {
+                    rotaId,
+                    det,
+                    nomeRota:   rotasAtivas.find(r => r.id === rotaId)?.nome || '?',
+                    cicloH:     det?.ciclo?.cicloH    || 0,
+                    volComboio: det?.ciclo?.volComboio || 0,
+                    demanda:    demandaMapa[rotaId]    || 0
+                };
+            }).filter(i => i.cicloH > 0 && i.volComboio > 0);
+
+            if (infos.length < 2) return;
+
+            // Menor demanda primeiro
+            infos.sort((a, b) => a.demanda - b.demanda);
+
+            conflitos.push({
+                nomeEmp:    empurradores.find(e => e.id === eId)?.nome || '?',
+                nomesRotas: infos.map(i => i.nomeRota),
+                demandas:   infos.map(i => Math.round(i.demanda)),
+                mes
+            });
+
+            let horasRestantes = totalHoras;
+            infos.forEach((info, idx) => {
+                const isLast = idx === infos.length - 1;
+                let viagensAjust;
+                if (isLast) {
+                    viagensAjust = horasRestantes / info.cicloH;
+                } else {
+                    const viagensNec   = info.demanda > 0 ? Math.ceil(info.demanda / info.volComboio) : 0;
+                    const horasAloc    = Math.min(viagensNec * info.cicloH, horasRestantes);
+                    viagensAjust       = horasAloc / info.cicloH;
+                    horasRestantes     = Math.max(0, horasRestantes - horasAloc);
+                }
+                const volNovo = viagensAjust * info.volComboio;
+                caps[info.rotaId].total += volNovo - info.det.volumeTotal;
+                info.det.viagens      = viagensAjust;
+                info.det.volumeTotal  = volNovo;
+            });
+        });
+
+        return { capacidades: caps, conflitos };
+    }
+
     function setDashView(mode) {
         dashViewMode = mode;
         const btnRota = document.getElementById('btnViewRota');
@@ -2687,12 +2959,23 @@
     function calcularDemandaMensalPorRota(rotasCenario, mes) {
         const mapa = {};
         const cidadesIds = new Set();
-        rotasCenario.forEach(r => (r.cidadesAtendidas || []).forEach(cid => cidadesIds.add(cid)));
+        rotasCenario.forEach(r => {
+            // Usa cidadeDestinoId se disponível (novo modelo), senão cidadesAtendidas (retrocompat)
+            if (r.cidadeDestinoId && !r.destinoIsPulmao) {
+                cidadesIds.add(r.cidadeDestinoId);
+            } else {
+                (r.cidadesAtendidas || []).forEach(cid => cidadesIds.add(cid));
+            }
+        });
         cidadesIds.forEach(cid => {
             const cidade = cidadesDemanda.find(c => c.id === cid);
-            if (!cidade) return;
+            if (!cidade || !cidade.isDestino) return;
             const demanda = (cidade.metas || [])[mes] || 0;
-            const rotasCidade = rotasCenario.filter(r => rotaAtivaNoMes(r, mes) && (r.cidadesAtendidas || []).includes(cid));
+            const rotasCidade = rotasCenario.filter(r => {
+                if (!rotaAtivaNoMes(r, mes)) return false;
+                if (r.cidadeDestinoId) return r.cidadeDestinoId === cid && !r.destinoIsPulmao;
+                return (r.cidadesAtendidas || []).includes(cid);
+            });
             if (rotasCidade.length === 0) return;
             const rateio = demanda / rotasCidade.length;
             rotasCidade.forEach(r => { mapa[r.id] = (mapa[r.id] || 0) + rateio; });
@@ -2737,6 +3020,28 @@
         const alertas = [];
         const chartData = { labels:[], metas:[], otimista:[], medio:[], pessimista:[] };
 
+        // Pré-computa capacidades ajustadas para cada mês × cenário,
+        // resolvendo conflitos de empurradores alocados em múltiplas rotas.
+        const capsAjust = {};
+        const conflitosMap = new Map();
+        for (let mes = mesAtual; mes < 12; mes++) {
+            for (const cen of ['otimista', 'medio', 'pessimista']) {
+                const nivelRioMap = {};
+                rotasFiltradas.forEach(rota => {
+                    const pp = getProjecaoPorMes(rota.rio)?.[mes];
+                    if (pp) nivelRioMap[rota.id] = pp[cen];
+                });
+                const { capacidades, conflitos } = calcularCapacidadesAjustadas(rotasFiltradas, mes, ano, nivelRioMap, cen);
+                capsAjust[`${mes}_${cen}`] = capacidades;
+                conflitos.forEach(c => {
+                    const key = c.nomeEmp + '|' + c.nomesRotas.slice().sort().join(',');
+                    if (!conflitosMap.has(key)) conflitosMap.set(key, { nomeEmp: c.nomeEmp, nomesRotas: c.nomesRotas, demandas: c.demandas, meses: new Set() });
+                    conflitosMap.get(key).meses.add(mes);
+                });
+            }
+        }
+        const conflitosLista = [...conflitosMap.values()].map(c => ({ ...c, meses: [...c.meses] }));
+
         if (dashViewMode === 'mes') {
             // ── Visão Por Mês: agrega capacidade de todas as rotas filtradas por mês ──
             const thead = document.querySelector('#tabelaDashboard thead tr');
@@ -2761,9 +3066,9 @@
                     if (!p) continue;
                     const demandaRateio = calcularDemandaMensalPorRota(rotasFiltradas, mes);
                     const meta  = demandaRateio.porRota[rota.id] || 0;
-                    const capOt = calcularCapacidadeRotaMes(rota, mes, ano, p.otimista,   'otimista');
-                    const capMe = calcularCapacidadeRotaMes(rota, mes, ano, p.medio,      'medio');
-                    const capPe = calcularCapacidadeRotaMes(rota, mes, ano, p.pessimista, 'pessimista');
+                    const capOt = capsAjust[`${mes}_otimista`]?.[rota.id]    || { total: 0, detalhes: [] };
+                    const capMe = capsAjust[`${mes}_medio`]?.[rota.id]       || { total: 0, detalhes: [] };
+                    const capPe = capsAjust[`${mes}_pessimista`]?.[rota.id]  || { total: 0, detalhes: [] };
                     if (!mesMapa[mes]) mesMapa[mes] = { ot:0, me:0, pe:0, meta:0, rotasData:[] };
                     mesMapa[mes].ot   += capOt.total;
                     mesMapa[mes].me   += capMe.total;
@@ -2827,9 +3132,9 @@
                     if (!p) continue;
                     const demandaRateio = calcularDemandaMensalPorRota(rotasFiltradas, mes);
                     const meta  = demandaRateio.porRota[rota.id] || 0;
-                    const capOt = calcularCapacidadeRotaMes(rota, mes, ano, p.otimista,   'otimista');
-                    const capMe = calcularCapacidadeRotaMes(rota, mes, ano, p.medio,      'medio');
-                    const capPe = calcularCapacidadeRotaMes(rota, mes, ano, p.pessimista, 'pessimista');
+                    const capOt = capsAjust[`${mes}_otimista`]?.[rota.id]    || { total: 0, detalhes: [] };
+                    const capMe = capsAjust[`${mes}_medio`]?.[rota.id]       || { total: 0, detalhes: [] };
+                    const capPe = capsAjust[`${mes}_pessimista`]?.[rota.id]  || { total: 0, detalhes: [] };
                     totOt += capOt.total; totMe += capMe.total; totPe += capPe.total; totMeta += meta;
                     const deficitPe = Math.max(0, meta - capPe.total);
                     const deficitMe = Math.max(0, meta - capMe.total);
@@ -2865,7 +3170,7 @@
         document.getElementById('resumoPessimista').textContent = Math.round(totPe).toLocaleString('pt-BR') + ' t';
         document.getElementById('resumoMeta').textContent       = Math.round(totMeta).toLocaleString('pt-BR') + ' t';
 
-        renderAlertas(alertas);
+        renderAlertas(alertas, conflitosLista);
         renderChartDashboard(chartData);
         renderChartComparativoCenarios(ano, mesAtual);
         renderCenariosCustomDashboard(ano, mesAtual);
@@ -3120,10 +3425,42 @@
         document.getElementById('modalDetalhe').classList.add('active');
     }
 
-    function renderAlertas(alertas) {
+    function renderAlertas(alertas, conflitos = []) {
         const container = document.getElementById('alertasDeficit');
+        let html = '';
+
+        // Seção de conflitos de frota
+        if (conflitos.length > 0) {
+            const itens = conflitos.map(c => {
+                const mesesStr = c.meses.map(m => MESES[m]).join(', ');
+                const rotasStr = c.nomesRotas.map((nome, i) =>
+                    `<span class="font-medium">${nome}</span> (demanda ${(c.demandas?.[i] || 0).toLocaleString('pt-BR')} t)`
+                ).join(' · ');
+                return `
+                <div class="border border-yellow-300 bg-yellow-50 rounded-lg p-3 mb-2">
+                    <div class="flex items-start gap-2">
+                        <i data-lucide="alert-circle" class="w-4 h-4 text-yellow-600 mt-0.5 shrink-0"></i>
+                        <div class="text-sm">
+                            <p class="font-semibold text-yellow-900">${c.nomeEmp} alocado em múltiplas rotas</p>
+                            <p class="text-yellow-800 mt-0.5">${rotasStr}</p>
+                            <p class="text-yellow-700 mt-0.5">Meses afetados: ${mesesStr} · Capacidade redistribuída: menor demanda atendida primeiro, potencial restante para a rota seguinte.</p>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+            html += `
+            <div class="mb-4">
+                <h3 class="text-sm font-semibold text-yellow-800 mb-2 flex items-center gap-2">
+                    <i data-lucide="zap" class="w-4 h-4 text-yellow-600"></i>
+                    Conflito de alocação de frota (${conflitos.length})
+                </h3>
+                ${itens}
+            </div>`;
+        }
+
+        // Seção de déficits
         if (!alertas.length) {
-            container.innerHTML = `
+            html += `
                 <div class="card p-6 border-l-4 border-green-500">
                     <div class="flex items-center gap-3">
                         <i data-lucide="check-circle" class="w-6 h-6 text-green-600"></i>
@@ -3134,11 +3471,11 @@
                     </div>
                 </div>`;
         } else {
-            const html = alertas.slice(0, 8).map(a => {
+            const itensDeficit = alertas.slice(0, 8).map(a => {
                 const isPe = a.cen === 'pessimista';
                 const cls  = isPe ? 'deficit-alert' : 'deficit-alert-medio';
-                const corT = isPe ? 'text-red-800'    : 'text-orange-800';
-                const corS = isPe ? 'text-red-700'    : 'text-orange-700';
+                const corT = isPe ? 'text-red-800'   : 'text-orange-800';
+                const corS = isPe ? 'text-red-700'   : 'text-orange-700';
                 const tag  = isPe ? '🔴 Pessimista'  : '🟠 Médio';
                 return `
                 <div class="${cls} mb-3">
@@ -3152,12 +3489,14 @@
                 </div>`;
             }).join('');
             const mais = alertas.length > 8 ? `<p class="text-center text-gray-500 mt-2">+ ${alertas.length - 8} alertas adicionais</p>` : '';
-            container.innerHTML = `
+            html += `
                 <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
                     <i data-lucide="alert-triangle" class="w-5 h-5 text-red-600"></i>
                     Alerta de déficit em cenários Pessimista e Médio (${alertas.length})
-                </h3>${html}${mais}`;
+                </h3>${itensDeficit}${mais}`;
         }
+
+        container.innerHTML = html;
         lucide.createIcons();
     }
 
