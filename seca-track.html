@@ -506,11 +506,11 @@
                         <span class="text-sm text-gray-500 whitespace-nowrap">Visão:</span>
                         <div class="flex rounded-lg overflow-hidden border border-gray-300">
                             <button id="btnViewRota" onclick="setDashView('rota')"
-                                class="text-xs px-3 py-1.5 font-medium bg-blue-600 text-white transition-colors">
+                                class="text-xs px-3 py-1.5 font-medium bg-white text-gray-600 transition-colors">
                                 <i data-lucide="list" class="w-3 h-3 inline mr-1"></i>Por Rota
                             </button>
                             <button id="btnViewMes" onclick="setDashView('mes')"
-                                class="text-xs px-3 py-1.5 font-medium bg-white text-gray-600 transition-colors">
+                                class="text-xs px-3 py-1.5 font-medium bg-blue-600 text-white transition-colors">
                                 <i data-lucide="calendar" class="w-3 h-3 inline mr-1"></i>Por Mês (Total)
                             </button>
                         </div>
@@ -533,6 +533,9 @@
                     </div>
                 </div>
                 <div class="chart-container" style="height: 420px;"><canvas id="chartDashboard"></canvas></div>
+                <div id="chartCenariosCustomToggle" class="hidden mt-3 pt-3 border-t border-gray-100 flex items-center gap-2 flex-wrap">
+                    <span class="text-xs font-medium text-gray-500">Cenários personalizados no gráfico:</span>
+                </div>
             </div>
             <div class="card p-6 mb-6">
                 <h2 class="text-lg font-semibold flex items-center gap-2 mb-4">
@@ -1037,9 +1040,10 @@
     let chartRios = null;
     let chartDashboard = null;
     let chartComparativoCenarios = null;
-    let dashViewMode = 'rota'; // 'rota' | 'mes'
+    let dashViewMode = 'mes'; // 'rota' | 'mes'
     let _detalhesMesCache = []; // cache para o modal de detalhes do mês
-    let dashCenariosVisiveis = {}; // id -> bool; ausente = visível
+    let dashCenariosVisiveis = {}; // id -> bool; ausente = visível (tabela)
+    let dashCenariosNoGrafico = {}; // id -> bool; ausente ou false = oculto no gráfico
     let anosHistoricoSelecionados = new Set(); // anos a sobrepor no gráfico de rio
     let ativosTempoParadaVisiveis = {}; // kept for compat – not used after refactor
     let tpVesselsHidden  = new Set(); // vessel names hidden in Tempo de Parada
@@ -1085,6 +1089,14 @@
         await restoreDbHandle();
         updateDbStatus();
         updateAllViews();
+        restoreUiFiltros();
+
+        // Persiste filtros de UI ao alterar seleções
+        const filtroIds = ['filtroRio','dashFiltroRota','dashFiltroCenarioRota','dashFiltroPeriodo','dashFiltroAno'];
+        filtroIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('change', () => saveToLocalStorage());
+        });
     });
 
     function buildCidadeMetasGrid() {
@@ -1121,12 +1133,23 @@
 
     // ---------- Persistência ----------
     function serializeState() {
+        const uiFiltros = {
+            filtroRio:             document.getElementById('filtroRio')?.value             || '',
+            dashFiltroRota:        document.getElementById('dashFiltroRota')?.value        || '',
+            dashFiltroCenarioRota: document.getElementById('dashFiltroCenarioRota')?.value || '',
+            dashFiltroPeriodo:     document.getElementById('dashFiltroPeriodo')?.value     || 'restante',
+            dashFiltroAno:         document.getElementById('dashFiltroAno')?.value         || '',
+            dashViewMode
+        };
         return {
             dadosRios, empurradores, barcacas, rotas, cidadesDemanda, cenariosRotas, variaveis,
+            uiFiltros,
             exportDate: new Date().toISOString(),
             version: '2.0'
         };
     }
+
+    let _pendingUiFiltros = null; // filtros a restaurar após updateAllViews
 
     function applyLoadedState(data) {
         dadosRios    = data.dadosRios || [];
@@ -1152,6 +1175,37 @@
             if (!Array.isArray(r.cidadesAtendidas)) r.cidadesAtendidas = [];
             if (!Array.isArray(r.mesesAtivos) || r.mesesAtivos.length !== 12) r.mesesAtivos = Array(12).fill(true);
         });
+        // Restaura dashViewMode imediatamente (não depende de DOM)
+        if (data.uiFiltros?.dashViewMode) {
+            dashViewMode = data.uiFiltros.dashViewMode;
+        }
+        // Guarda restantes para aplicar após updateAllViews popular os selects
+        _pendingUiFiltros = data.uiFiltros || null;
+    }
+
+    function restoreUiFiltros() {
+        if (!_pendingUiFiltros) return;
+        const f = _pendingUiFiltros;
+        _pendingUiFiltros = null;
+        const setVal = (id, val) => {
+            const el = document.getElementById(id);
+            if (el && val) el.value = val;
+        };
+        setVal('filtroRio', f.filtroRio);
+        setVal('dashFiltroRota', f.dashFiltroRota);
+        setVal('dashFiltroCenarioRota', f.dashFiltroCenarioRota);
+        setVal('dashFiltroPeriodo', f.dashFiltroPeriodo);
+        setVal('dashFiltroAno', f.dashFiltroAno);
+        // Sincroniza botão de visão
+        if (f.dashViewMode) {
+            dashViewMode = f.dashViewMode;
+            const btnRota = document.getElementById('btnViewRota');
+            const btnMes  = document.getElementById('btnViewMes');
+            if (btnRota && btnMes) {
+                btnRota.className = `text-xs px-3 py-1.5 font-medium transition-colors ${dashViewMode==='rota' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`;
+                btnMes.className  = `text-xs px-3 py-1.5 font-medium transition-colors ${dashViewMode==='mes'  ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`;
+            }
+        }
     }
 
     function applyVariaveisToInputs() {
@@ -2444,7 +2498,7 @@
                 ? 'text-xs px-2 py-1 rounded-full border font-medium cursor-pointer transition-all bg-purple-100 border-purple-400 text-purple-700'
                 : 'text-xs px-2 py-1 rounded-full border font-medium cursor-pointer transition-all bg-gray-100 border-gray-300 text-gray-500';
             const caladoOpMin = (a.calado + variaveis.abaco - variaveis.faq).toFixed(2);
-            return `<button class="${cls}" onclick="toggleCalado('${a.key}')" title="${a.grupo}: ${a.nome} — cal. op. mín. ${caladoOpMin} m">${a.nome} ≥${caladoOpMin} m</button>`;
+            return `<button class="${cls}" onclick="toggleCalado('${a.key}')" title="${a.grupo}: ${a.nome} — cal. op. mín. ${caladoOpMin} m">${a.nome}</button>`;
         }).join('');
         lucide.createIcons();
     }
@@ -3803,6 +3857,7 @@
             btnRota.className = `text-xs px-3 py-1.5 font-medium transition-colors ${mode==='rota' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`;
             btnMes.className  = `text-xs px-3 py-1.5 font-medium transition-colors ${mode==='mes'  ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`;
         }
+        saveToLocalStorage();
         updateDashboard();
     }
 
@@ -4024,7 +4079,11 @@
 
         let totOt=0, totMe=0, totPe=0, totMeta=0;
         const alertas = [];
-        const chartData = { labels:[], metas:[], otimista:[], medio:[], pessimista:[] };
+        const cenariosCustomLista = variaveis.cenariosCustom || [];
+        const chartData = { labels:[], metas:[], otimista:[], medio:[], pessimista:[], custom:[] };
+        // Pré-calcula capacidade total mensal por cenário personalizado (para o gráfico)
+        const customCapsPorMes = {};
+        cenariosCustomLista.forEach(c => { customCapsPorMes[c.id] = []; });
 
         // Pré-computa capacidades ajustadas para cada mês × cenário,
         // resolvendo conflitos de empurradores alocados em múltiplas rotas.
@@ -4180,6 +4239,35 @@
         document.getElementById('resumoPessimista').textContent = Math.round(totPe).toLocaleString('pt-BR') + ' t';
         document.getElementById('resumoMeta').textContent       = Math.round(totMeta).toLocaleString('pt-BR') + ' t';
 
+        // Computa dados dos cenários personalizados para o gráfico
+        // Só faz sentido na visão "Por Mês" (agrega toda a frota)
+        if (dashViewMode === 'mes' && cenariosCustomLista.length > 0) {
+            cenariosCustomLista.forEach(cenConf => {
+                const capPorLabel = {};
+                rotasExibidas.forEach(rota => {
+                    for (const mes of mesesDashboard) {
+                        if (!rotaAtivaNoMes(rota, mes)) continue;
+                        const nivelRioMap = {};
+                        rotasExibidas.forEach(r => {
+                            const nivel = getNivelRioCenarioAnoMes(r.rio, ano, mes, cenConf.id);
+                            if (nivel !== null && nivel !== undefined) nivelRioMap[r.id] = nivel;
+                        });
+                        const caps = calcularCapacidadesAjustadas(rotasExibidas, mes, ano, nivelRioMap, cenConf.id).capacidades;
+                        const label = MESES[mes];
+                        if (!capPorLabel[label]) capPorLabel[label] = 0;
+                        if (isRotaDestinoFinal(rota)) capPorLabel[label] += caps[rota.id]?.total || 0;
+                    }
+                });
+                chartData.custom.push({
+                    id: cenConf.id,
+                    nome: cenConf.nome,
+                    cor: cenConf.cor,
+                    data: chartData.labels.map(l => capPorLabel[l] ?? null)
+                });
+            });
+        }
+        renderChartCenariosCustomToggle(dashViewMode === 'mes' ? cenariosCustomLista : []);
+
         renderPulmaoDashboard(rotasDoCenario, mesesDashboard, capsAjust, ano);
         renderAlertas(alertas, conflitosLista);
         renderChartDashboard(chartData);
@@ -4255,6 +4343,30 @@
         renderCenariosCustomDashboard(ano, mesesDashboard);
     }
 
+    function toggleDashCenarioGrafico(id) {
+        dashCenariosNoGrafico[id] = !dashCenariosNoGrafico[id];
+        updateDashboard();
+    }
+
+    function renderChartCenariosCustomToggle(lista) {
+        const wrap = document.getElementById('chartCenariosCustomToggle');
+        if (!wrap) return;
+        if (!lista || lista.length === 0) { wrap.classList.add('hidden'); return; }
+        wrap.classList.remove('hidden');
+        const pills = lista.map(c => {
+            const ativo = !!dashCenariosNoGrafico[c.id];
+            const cls = ativo
+                ? 'text-xs px-2.5 py-1 rounded-full border font-medium cursor-pointer transition-all text-white'
+                : 'text-xs px-2.5 py-1 rounded-full border font-medium cursor-pointer transition-all bg-gray-100 border-gray-300 text-gray-400';
+            const style = ativo ? `background:${c.cor};border-color:${c.cor}` : '';
+            return `<button class="${cls}" style="${style}" onclick="toggleDashCenarioGrafico('${c.id}')">${c.nome}</button>`;
+        }).join('');
+        wrap.innerHTML = `<span class="text-xs font-medium text-gray-500">Cenários personalizados no gráfico:</span>${pills}`;
+    }
+
+    // Cache para o modal de detalhe de cenário personalizado
+    let _customDetalheCache = [];
+
     function renderCenariosCustomDashboard(ano, mesesDashboard) {
         const container = document.getElementById('cenariosCustomDashboard');
         if (!container) return;
@@ -4288,40 +4400,43 @@
             return;
         }
 
-        container.innerHTML = header + listaVisiveis.map(cenConf => {
-            let totalCap = 0;
-            const rows = [];
+        const rotasFiltradas = rotas.filter(isRotaDestinoFinal);
 
-            const rotasCalculo = rotas.slice();
+        const cards = listaVisiveis.map(cenConf => {
             const capsPorMes = {};
             const demandaPorMes = {};
+            const rowsData = []; // dados para o cache do modal
+
             mesesDashboard.forEach(mes => {
-                demandaPorMes[mes] = calcularDemandaMensalPorRota(rotasCalculo, mes);
+                demandaPorMes[mes] = calcularDemandaMensalPorRota(rotasFiltradas, mes);
                 const nivelRioMap = {};
-                rotasCalculo.forEach(rota => {
+                rotasFiltradas.forEach(rota => {
                     const nivel = getNivelRioCenarioAnoMes(rota.rio, ano, mes, cenConf.id);
                     if (nivel !== null && nivel !== undefined) nivelRioMap[rota.id] = nivel;
                 });
-                capsPorMes[mes] = calcularCapacidadesAjustadas(rotasCalculo, mes, ano, nivelRioMap, cenConf.id).capacidades;
+                capsPorMes[mes] = calcularCapacidadesAjustadas(rotasFiltradas, mes, ano, nivelRioMap, cenConf.id).capacidades;
             });
 
-            rotas.filter(isRotaDestinoFinal).forEach(rota => {
+            let totCap = 0, totMeta = 0;
+            const mesMapa = {}; // mes -> { ot, meta, rotasData[] }
+
+            rotasFiltradas.forEach(rota => {
                 for (const mes of mesesDashboard) {
                     if (!rotaAtivaNoMes(rota, mes)) continue;
-                    const cap   = capsPorMes[mes]?.[rota.id] || { total: 0, detalhes: [] };
-                    const meta  = demandaPorMes[mes]?.porRota[rota.id] || 0;
-                    totalCap   += cap.total;
-                    const deficit = Math.max(0, meta - cap.total);
-                    const badgeClass = deficit > 0 ? 'badge-danger' : 'badge-success';
-                    rows.push(`
-                        <tr>
-                            <td class="font-medium">${rota.nome}</td>
-                            <td>${MESES_FULL[mes]}</td>
-                            <td>${meta.toLocaleString('pt-BR')}</td>
-                            <td class="font-medium">${Math.round(cap.total).toLocaleString('pt-BR')}</td>
-                            <td class="${deficit>0?'text-red-600 font-bold':'text-green-600'}">${Math.round(deficit).toLocaleString('pt-BR')}</td>
-                            <td><span class="badge ${badgeClass}">${deficit>0?'DÉFICIT':'OK'}</span></td>
-                        </tr>`);
+                    const cap  = capsPorMes[mes]?.[rota.id] || { total: 0, detalhes: [] };
+                    const meta = demandaPorMes[mes]?.porRota[rota.id] || 0;
+                    totCap  += cap.total;
+                    totMeta += meta;
+                    if (!mesMapa[mes]) mesMapa[mes] = { cap: 0, meta: 0, rotasData: [] };
+                    mesMapa[mes].cap  += cap.total;
+                    mesMapa[mes].meta += meta;
+                    const p = {
+                        otimista:   getNivelRioCenarioAnoMes(rota.rio, ano, mes, 'otimista'),
+                        medio:      getNivelRioCenarioAnoMes(rota.rio, ano, mes, 'medio'),
+                        pessimista: getNivelRioCenarioAnoMes(rota.rio, ano, mes, 'pessimista'),
+                        custom:     getNivelRioCenarioAnoMes(rota.rio, ano, mes, cenConf.id)
+                    };
+                    mesMapa[mes].rotasData.push({ rota, mes, cap, meta, p, cenConf });
                 }
             });
 
@@ -4331,6 +4446,28 @@
                     ? `${cenConf.percentual >= 0 ? '+' : ''}${cenConf.percentual}% sobre a projeção base`
                     : 'nível fixo manual';
 
+            const rows = mesesDashboard.map(mes => {
+                const d = mesMapa[mes];
+                if (!d) return '';
+                const deficit = Math.max(0, d.meta - d.cap);
+                const { status, bc } = statusBadge(deficit, d.cap, d.meta);
+                const cacheKey = `${cenConf.id}_${mes}`;
+                rowsData.push({ key: cacheKey, data: d.rotasData, mes, ano });
+                return `<tr class="cursor-pointer hover:bg-gray-50" onclick="abrirDetalheCenarioCustom('${cacheKey}')">
+                    <td class="font-medium">${MESES_FULL[mes]}</td>
+                    <td>${d.meta.toLocaleString('pt-BR')}</td>
+                    <td class="font-medium" style="color:${cenConf.cor}">${Math.round(d.cap).toLocaleString('pt-BR')}</td>
+                    <td class="${deficit>0?'text-red-600 font-bold':'text-green-600'}">${Math.round(deficit).toLocaleString('pt-BR')}</td>
+                    <td><span class="badge ${bc}">${status}</span></td>
+                </tr>`;
+            }).join('');
+
+            // armazena no cache global para uso no modal
+            rowsData.forEach(r => {
+                if (!_customDetalheCache[r.key]) _customDetalheCache = {};
+                _customDetalheCache[r.key] = r;
+            });
+
             return `
                 <div class="card p-6 mb-4">
                     <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
@@ -4339,18 +4476,83 @@
                             ${cenConf.nome}
                             <span class="text-xs font-normal text-gray-500">(${tipoDesc})</span>
                         </h3>
-                        <span class="text-sm font-medium text-gray-700">Total: <b>${Math.round(totalCap).toLocaleString('pt-BR')} t</b></span>
+                        <span class="text-sm font-medium text-gray-700">Total: <b>${Math.round(totCap).toLocaleString('pt-BR')} t</b></span>
                     </div>
+                    <div class="text-xs text-gray-400 mb-2">Clique em um mês para ver o detalhamento por rota</div>
                     <div class="table-container">
                         <table>
                             <thead><tr>
-                                <th>Rota</th><th>Mês</th><th>Meta (t)</th><th>Capacidade (t)</th><th>Déficit</th><th>Status</th>
+                                <th>Mês</th><th>Meta (t)</th>
+                                <th style="color:${cenConf.cor}">Cap. ${cenConf.nome} (t)</th>
+                                <th>Déficit (t)</th><th>Status</th>
                             </tr></thead>
-                            <tbody>${rows.join('') || '<tr><td colspan="6" class="text-gray-400 text-center py-3">Sem dados</td></tr>'}</tbody>
+                            <tbody>${rows || '<tr><td colspan="5" class="text-gray-400 text-center py-3">Sem dados</td></tr>'}</tbody>
                         </table>
                     </div>
                 </div>`;
         }).join('');
+
+        container.innerHTML = header + cards;
+    }
+
+    function abrirDetalheCenarioCustom(key) {
+        const entry = _customDetalheCache[key];
+        if (!entry) return;
+        const { data, mes, ano } = entry;
+        const cenConf = data[0]?.cenConf;
+        document.getElementById('tituloDetalhe').textContent = `${cenConf?.nome || 'Cenário'} — ${MESES_FULL[mes]}/${ano}`;
+        const body = document.getElementById('detalheBody');
+
+        const totCap  = data.reduce((s, d) => s + d.cap.total, 0);
+        const totMeta = data.reduce((s, d) => s + d.meta, 0);
+
+        const rows = data.map((d, idx) => {
+            const deficit = Math.max(0, d.meta - d.cap.total);
+            const { status, bc } = statusBadge(deficit, d.cap.total, d.meta);
+            return `<tr class="cursor-pointer" onclick="abrirDetalheCenarioCustomRota(${idx}, '${key}', ${ano})">
+                <td class="font-medium">${d.rota.nome}</td>
+                <td>${d.meta.toLocaleString('pt-BR')}</td>
+                <td class="font-medium" style="color:${cenConf?.cor}">${Math.round(d.cap.total).toLocaleString('pt-BR')}</td>
+                <td class="${deficit>0?'text-red-600 font-bold':'text-green-600'}">${Math.round(deficit).toLocaleString('pt-BR')}</td>
+                <td><span class="badge ${bc}">${status}</span></td>
+            </tr>`;
+        }).join('');
+
+        body.innerHTML = `
+            <p class="text-xs text-gray-500 mb-3">Clique em uma rota para ver o detalhamento de viagens.</p>
+            <div class="table-container">
+                <table>
+                    <thead><tr>
+                        <th>Rota</th><th>Meta (t)</th>
+                        <th style="color:${cenConf?.cor}">Cap. ${cenConf?.nome || ''} (t)</th>
+                        <th>Déficit (t)</th><th>Status</th>
+                    </tr></thead>
+                    <tbody>
+                        ${rows}
+                        <tr class="font-bold bg-gray-50 border-t-2 border-gray-300">
+                            <td>TOTAL</td>
+                            <td>${totMeta.toLocaleString('pt-BR')}</td>
+                            <td style="color:${cenConf?.cor}">${Math.round(totCap).toLocaleString('pt-BR')}</td>
+                            <td></td><td></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>`;
+        document.getElementById('modalDetalhe').classList.add('active');
+    }
+
+    function abrirDetalheCenarioCustomRota(idx, key, ano) {
+        const entry = _customDetalheCache[key];
+        if (!entry) return;
+        const d = entry.data[idx];
+        if (!d) return;
+        closeModal('detalhe');
+        // Abre o modal padrão com cenário base (médio) mais o nível do cenário custom como referência
+        const capOt = { total: d.cap.total, detalhes: d.cap.detalhes };
+        const capMe = { total: d.cap.total, detalhes: d.cap.detalhes };
+        const capPe = { total: d.cap.total, detalhes: d.cap.detalhes };
+        const pAdapt = { otimista: d.p.custom, medio: d.p.custom, pessimista: d.p.custom };
+        abrirDetalhe(d.rota, d.mes, ano, pAdapt, capOt, capMe, capPe);
     }
 
     function abrirDetalhe(rota, mes, ano, p, capOt, capMe, capPe) {
@@ -4557,6 +4759,24 @@
         const realMed  = d.medio.slice();
         const realOt   = d.otimista.slice();
 
+        // Datasets dos cenários personalizados visíveis no gráfico
+        const customDatasets = (d.custom || [])
+            .filter(c => !!dashCenariosNoGrafico[c.id])
+            .map(c => ({
+                label: c.nome,
+                data: c.data,
+                type: 'line',
+                borderColor: c.cor,
+                backgroundColor: c.cor + '22',
+                borderWidth: 2,
+                borderDash: [4, 3],
+                pointRadius: 4,
+                pointBackgroundColor: c.cor,
+                fill: false,
+                tension: 0.2,
+                order: -2
+            }));
+
         chartDashboard = new Chart(ctx, {
             type: 'bar',
             data: {
@@ -4595,7 +4815,8 @@
                         fill: false,
                         tension: 0,
                         order: -1
-                    }
+                    },
+                    ...customDatasets
                 ]
             },
             options: {
@@ -4614,7 +4835,10 @@
                                     return `Médio: ${Math.round(realMed[i]).toLocaleString('pt-BR')} t`;
                                 if (c.dataset.label === 'Δ Otimista')
                                     return `Otimista: ${Math.round(realOt[i]).toLocaleString('pt-BR')} t`;
-                                return `Budget: ${Math.round(c.parsed.y).toLocaleString('pt-BR')} t`;
+                                if (c.dataset.label === 'Budget')
+                                    return `Budget: ${Math.round(c.parsed.y).toLocaleString('pt-BR')} t`;
+                                // Cenário personalizado
+                                return `${c.dataset.label}: ${c.parsed.y != null ? Math.round(c.parsed.y).toLocaleString('pt-BR') + ' t' : '-'}`;
                             },
                             afterBody: items => {
                                 const i = items[0]?.dataIndex;
