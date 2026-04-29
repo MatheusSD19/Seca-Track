@@ -4759,13 +4759,14 @@
         const realMed  = d.medio.slice();
         const realOt   = d.otimista.slice();
 
-        // Datasets dos cenários personalizados visíveis no gráfico
+        // Cenários personalizados visíveis no gráfico
         const customDatasets = (d.custom || [])
             .filter(c => !!dashCenariosNoGrafico[c.id])
             .map(c => ({
                 label: c.nome,
                 data: c.data,
                 type: 'line',
+                yAxisID: 'yLine',
                 borderColor: c.cor,
                 backgroundColor: 'transparent',
                 borderWidth: 2,
@@ -4773,9 +4774,16 @@
                 pointRadius: 4,
                 pointBackgroundColor: c.cor,
                 fill: false,
-                tension: 0.2,
-                order: -1
+                tension: 0.2
             }));
+
+        // Calcula o max compartilhado para alinhar os dois eixos visualmente
+        const allValues = [
+            ...realOt,
+            ...d.metas,
+            ...(d.custom || []).filter(c => !!dashCenariosNoGrafico[c.id]).flatMap(c => c.data.filter(v => v != null))
+        ].filter(v => v > 0);
+        const yMax = allValues.length ? Math.max(...allValues) * 1.1 : undefined;
 
         chartDashboard = new Chart(ctx, {
             type: 'bar',
@@ -4786,24 +4794,28 @@
                         label: 'Pessimista',
                         data: realPess,
                         backgroundColor: '#ef4444',
-                        stack: 'cap'
+                        stack: 'cap',
+                        yAxisID: 'y'
                     },
                     {
                         label: 'Δ Médio',
                         data: deltaMedio,
                         backgroundColor: '#3b82f6',
-                        stack: 'cap'
+                        stack: 'cap',
+                        yAxisID: 'y'
                     },
                     {
                         label: 'Δ Otimista',
                         data: deltaOtimista,
                         backgroundColor: '#10b981',
-                        stack: 'cap'
+                        stack: 'cap',
+                        yAxisID: 'y'
                     },
                     {
                         label: 'Budget',
                         data: d.metas,
                         type: 'line',
+                        yAxisID: 'yLine',
                         borderColor: '#374151',
                         borderWidth: 2,
                         borderDash: [8, 4],
@@ -4837,7 +4849,6 @@
                                     return `Otimista: ${Math.round(realOt[i]).toLocaleString('pt-BR')} t`;
                                 if (c.dataset.label === 'Budget')
                                     return `Budget: ${Math.round(c.parsed.y).toLocaleString('pt-BR')} t`;
-                                // Cenário personalizado
                                 return `${c.dataset.label}: ${c.parsed.y != null ? Math.round(c.parsed.y).toLocaleString('pt-BR') + ' t' : '-'}`;
                             },
                             afterBody: items => {
@@ -4859,8 +4870,17 @@
                     x: { stacked: true, ticks: { maxRotation: 55, minRotation: 35 } },
                     y: {
                         stacked: true,
+                        min: 0,
+                        max: yMax,
                         title: { display: true, text: 'Volume (t)' },
                         ticks: { callback: v => v.toLocaleString('pt-BR') }
+                    },
+                    yLine: {
+                        display: false,
+                        stacked: false,
+                        min: 0,
+                        max: yMax,
+                        position: 'left'
                     }
                 }
             }
