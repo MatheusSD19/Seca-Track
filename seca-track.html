@@ -50,7 +50,12 @@
 
         .chart-container { position: relative; height: 320px; width: 100%; }
         .deficit-alert { background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); border: 1px solid #ef4444; border-radius: 0.5rem; padding: 1rem; }
-        .deficit-alert-medio { background: linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%); border: 1px solid #f97316; border-radius: 0.5rem; padding: 1rem; }
+        .deficit-alert-medio { background: linear-gradient(135deg, #eff6ff 0%, #bfdbfe 100%); border: 1px solid #3b82f6; border-radius: 0.5rem; padding: 1rem; }
+
+        .collapsible-btn { width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 1rem; text-align: left; background: transparent; border: none; cursor: pointer; transition: background 0.15s; }
+        .collapsible-btn:hover { background: #f9fafb; }
+        .collapsible-chevron { transition: transform 0.2s ease; color: #9ca3af; }
+        .collapsible-chevron.open { transform: rotate(180deg); }
 
         .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
         .modal.active { display: flex; }
@@ -458,9 +463,9 @@
                     <p class="text-2xl font-bold text-blue-600" id="resumoMedio">-</p>
                     <p class="text-xs text-gray-400 mt-1">Projeção base</p>
                 </div>
-                <div class="card p-5 border-l-4 border-orange-400">
+                <div class="card p-5 border-l-4 border-red-500">
                     <h3 class="text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Cap. Pessimista</h3>
-                    <p class="text-2xl font-bold text-orange-500" id="resumoPessimista">-</p>
+                    <p class="text-2xl font-bold text-red-600" id="resumoPessimista">-</p>
                     <p class="text-xs text-gray-400 mt-1">Pior cenário</p>
                 </div>
                 <div class="card p-5 border-l-4 border-gray-400">
@@ -522,8 +527,8 @@
                     </h2>
                     <div class="flex items-center gap-2 text-xs text-gray-500">
                         <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm inline-block" style="background:#ef4444"></span>Pessimista</span>
-                        <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm inline-block" style="background:#22c55e"></span>Δ Médio</span>
-                        <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm inline-block" style="background:#3b82f6"></span>Δ Otimista</span>
+                        <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm inline-block" style="background:#3b82f6"></span>Δ Médio</span>
+                        <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm inline-block" style="background:#10b981"></span>Δ Otimista</span>
                         <span class="flex items-center gap-1">— Budget</span>
                     </div>
                 </div>
@@ -4440,11 +4445,22 @@
         document.getElementById('modalDetalhe').classList.add('active');
     }
 
+    function toggleDashSection(id) {
+        const body = document.getElementById('body-' + id);
+        const chevron = document.getElementById('chevron-' + id);
+        if (!body) return;
+        const isNowHidden = body.classList.toggle('hidden');
+        if (chevron) {
+            if (isNowHidden) chevron.classList.remove('open');
+            else chevron.classList.add('open');
+        }
+    }
+
     function renderAlertas(alertas, conflitos = []) {
         const container = document.getElementById('alertasDeficit');
         let html = '';
 
-        // Seção de conflitos de frota
+        // Seção de conflitos de frota (colapsável, recolhido por padrão)
         if (conflitos.length > 0) {
             const itens = conflitos.map(c => {
                 const mesesStr = c.meses.map(m => MESES[m]).join(', ');
@@ -4464,16 +4480,21 @@
                 </div>`;
             }).join('');
             html += `
-            <div class="mb-4">
-                <h3 class="text-sm font-semibold text-yellow-800 mb-2 flex items-center gap-2">
-                    <i data-lucide="zap" class="w-4 h-4 text-yellow-600"></i>
-                    Conflito de alocação de frota (${conflitos.length})
-                </h3>
-                ${itens}
+            <div class="card mb-4 overflow-hidden">
+                <button class="collapsible-btn" onclick="toggleDashSection('conflitos-frota')">
+                    <span class="flex items-center gap-2 text-sm font-semibold text-yellow-800">
+                        <i data-lucide="zap" class="w-4 h-4 text-yellow-600"></i>
+                        Conflito de alocação de frota (${conflitos.length})
+                    </span>
+                    <svg id="chevron-conflitos-frota" class="collapsible-chevron w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                <div id="body-conflitos-frota" class="hidden px-4 pb-4">
+                    ${itens}
+                </div>
             </div>`;
         }
 
-        // Seção de déficits
+        // Seção de déficits (colapsável, recolhido por padrão)
         if (!alertas.length) {
             html += `
                 <div class="card p-6 border-l-4 border-green-500">
@@ -4489,9 +4510,9 @@
             const itensDeficit = alertas.slice(0, 8).map(a => {
                 const isPe = a.cen === 'pessimista';
                 const cls  = isPe ? 'deficit-alert' : 'deficit-alert-medio';
-                const corT = isPe ? 'text-red-800'   : 'text-orange-800';
-                const corS = isPe ? 'text-red-700'   : 'text-orange-700';
-                const tag  = isPe ? '🔴 Pessimista'  : '🟠 Médio';
+                const corT = isPe ? 'text-red-800'   : 'text-blue-800';
+                const corS = isPe ? 'text-red-700'   : 'text-blue-700';
+                const tag  = isPe ? '🔴 Pessimista'  : '🔵 Médio';
                 return `
                 <div class="${cls} mb-3">
                     <div class="flex justify-between items-start gap-2">
@@ -4505,10 +4526,18 @@
             }).join('');
             const mais = alertas.length > 8 ? `<p class="text-center text-gray-500 mt-2">+ ${alertas.length - 8} alertas adicionais</p>` : '';
             html += `
-                <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
-                    <i data-lucide="alert-triangle" class="w-5 h-5 text-red-600"></i>
-                    Alerta de déficit em cenários Pessimista e Médio (${alertas.length})
-                </h3>${itensDeficit}${mais}`;
+            <div class="card mb-4 overflow-hidden">
+                <button class="collapsible-btn" onclick="toggleDashSection('alertas-deficit')">
+                    <span class="flex items-center gap-2 text-lg font-semibold text-gray-800">
+                        <i data-lucide="alert-triangle" class="w-5 h-5 text-red-600"></i>
+                        Alerta de déficit em cenários Pessimista e Médio (${alertas.length})
+                    </span>
+                    <svg id="chevron-alertas-deficit" class="collapsible-chevron w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                <div id="body-alertas-deficit" class="hidden px-4 pb-4">
+                    ${itensDeficit}${mais}
+                </div>
+            </div>`;
         }
 
         container.innerHTML = html;
@@ -4542,13 +4571,13 @@
                     {
                         label: 'Δ Médio',
                         data: deltaMedio,
-                        backgroundColor: '#22c55e',
+                        backgroundColor: '#3b82f6',
                         stack: 'cap'
                     },
                     {
                         label: 'Δ Otimista',
                         data: deltaOtimista,
-                        backgroundColor: '#3b82f6',
+                        backgroundColor: '#10b981',
                         stack: 'cap'
                     },
                     {
