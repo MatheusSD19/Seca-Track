@@ -233,6 +233,15 @@
                         <div id="botoesCalados" class="flex gap-2 flex-wrap"></div>
                     </div>
                 </div>
+                <!-- Toggle de cenários projetados -->
+                <div class="mt-3 pt-3 border-t border-gray-100" id="painelCenariosRio">
+                    <div class="flex items-start gap-3 flex-wrap">
+                        <span class="text-xs font-medium text-gray-600 flex items-center gap-1 mt-1 shrink-0">
+                            <i data-lucide="eye" class="w-3 h-3"></i> Cenários visíveis:
+                        </span>
+                        <div id="botoesCenariosRio" class="flex gap-2 flex-wrap"></div>
+                    </div>
+                </div>
                 <!-- Anos históricos para comparação -->
                 <div class="mt-3 pt-3 border-t border-gray-100" id="painelAnosHistoricos" style="display:none">
                     <div class="flex items-start gap-3 flex-wrap">
@@ -526,9 +535,9 @@
                         <span id="dashChartTitle">Capacidade vs Budget por Mês</span>
                     </h2>
                     <div class="flex items-center gap-2 text-xs text-gray-500">
-                        <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm inline-block" style="background:#ef4444"></span>Pessimista</span>
-                        <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm inline-block" style="background:#3b82f6"></span>Δ Médio</span>
-                        <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm inline-block" style="background:#10b981"></span>Δ Otimista</span>
+                        <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm inline-block" style="background:#22c55e"></span>Seguro</span>
+                        <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm inline-block" style="background:#eab308"></span>Atenção</span>
+                        <span class="flex items-center gap-1"><span class="w-3 h-2 rounded-sm inline-block" style="background:#ef4444"></span>Alerta</span>
                         <span class="flex items-center gap-1">— Budget</span>
                     </div>
                 </div>
@@ -1045,6 +1054,7 @@
     let dashCenariosVisiveis = {}; // id -> bool; ausente = visível (tabela)
     let dashCenariosNoGrafico = {}; // id -> bool; ausente ou false = oculto no gráfico
     let anosHistoricoSelecionados = new Set(); // anos a sobrepor no gráfico de rio
+    let cenariosRioOcultos = new Set(); // ids de cenários ocultos no gráfico de rio; ausente = visível
     let ativosTempoParadaVisiveis = {}; // kept for compat – not used after refactor
     let tpVesselsHidden  = new Set(); // vessel names hidden in Tempo de Parada
     let tpCenariosHidden = new Set(); // scenario IDs hidden in Tempo de Parada
@@ -1893,16 +1903,19 @@
             pessDs[lastHistIdx]  = vH;
         }
 
-        // Datasets base — Otimista e Pessimista com fill entre eles (banda de incerteza)
+        // Datasets base — filtrados por cenariosRioOcultos
+        const mostrarOtim = !cenariosRioOcultos.has('otimista');
+        const mostrarPess = !cenariosRioOcultos.has('pessimista');
         const datasets = [
             { label:'Histórico',      data: proj.historico, borderColor:'#374151', backgroundColor:'#374151', tension:0.25, pointRadius:4, spanGaps:false, borderWidth:2, fill:false },
-            { label:'Projeção Média', data: medioDs,        borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,0.08)', borderDash:[6,4], tension:0.25, pointRadius:3, spanGaps:false, fill:false },
-            { label:'Otimista',       data: otimDs,         borderColor:'#10b981', backgroundColor:'rgba(59,130,246,0.10)', borderDash:[6,4], tension:0.25, pointRadius:3, spanGaps:false, fill:'+1' },
-            { label:'Pessimista',     data: pessDs,         borderColor:'#ef4444', backgroundColor:'rgba(59,130,246,0.10)', borderDash:[6,4], tension:0.25, pointRadius:3, spanGaps:false, fill:false }
+            ...(!cenariosRioOcultos.has('medio') ? [{ label:'Projeção Média', data: medioDs, borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,0.08)', borderDash:[6,4], tension:0.25, pointRadius:3, spanGaps:false, fill:false }] : []),
+            ...(mostrarOtim ? [{ label:'Otimista', data: otimDs, borderColor:'#10b981', backgroundColor:'rgba(16,185,129,0.10)', borderDash:[6,4], tension:0.25, pointRadius:3, spanGaps:false, fill: mostrarPess ? '+1' : false }] : []),
+            ...(mostrarPess ? [{ label:'Pessimista', data: pessDs, borderColor:'#ef4444', backgroundColor:'rgba(239,68,68,0.10)', borderDash:[6,4], tension:0.25, pointRadius:3, spanGaps:false, fill:false }] : []),
         ];
 
         // Datasets dos cenários customizados
         (variaveis.cenariosCustom || []).forEach(c => {
+            if (cenariosRioOcultos.has(c.id)) return;
             const ds = (proj.custom[c.id] || []).slice();
             if (lastHistIdx >= 0 && proj.historico[lastHistIdx] !== null) ds[lastHistIdx] = proj.historico[lastHistIdx];
             datasets.push({
@@ -1967,7 +1980,8 @@
             ).join('');
         }
 
-        // Atualizar botões de anos históricos
+        // Atualizar botões de cenários e anos históricos
+        renderCenariosRioToggle();
         atualizarBotoesAnosHistoricos(rioSel);
 
         // Linhas de calado mínimo dos ativos visíveis
@@ -2056,6 +2070,35 @@
             anosHistoricoSelecionados.delete(ano);
         } else {
             anosHistoricoSelecionados.add(ano);
+        }
+        updateRioChart();
+    }
+
+    function renderCenariosRioToggle() {
+        const container = document.getElementById('botoesCenariosRio');
+        if (!container) return;
+        const base = [
+            { id: 'otimista',   label: 'Otimista',   cor: '#10b981' },
+            { id: 'medio',      label: 'Médio',       cor: '#3b82f6' },
+            { id: 'pessimista', label: 'Pessimista',  cor: '#ef4444' },
+        ];
+        const custom = (variaveis.cenariosCustom || []).map(c => ({ id: c.id, label: c.nome, cor: c.cor }));
+        container.innerHTML = [...base, ...custom].map(c => {
+            const ativo = !cenariosRioOcultos.has(c.id);
+            return `<button onclick="toggleCenarioRio('${c.id}')"
+                class="text-xs px-2 py-0.5 rounded-full border font-medium transition-all"
+                style="${ativo
+                    ? `background:${c.cor};color:white;border-color:${c.cor}`
+                    : `background:white;color:#6b7280;border-color:#d1d5db`}">${c.label}</button>`;
+        }).join('');
+        lucide.createIcons();
+    }
+
+    function toggleCenarioRio(id) {
+        if (cenariosRioOcultos.has(id)) {
+            cenariosRioOcultos.delete(id);
+        } else {
+            cenariosRioOcultos.add(id);
         }
         updateRioChart();
     }
@@ -4829,12 +4872,12 @@
                         callbacks: {
                             label: c => {
                                 const i = c.dataIndex;
-                                if (c.dataset.label === 'Pessimista')
-                                    return `Pessimista: ${Math.round(realPess[i]).toLocaleString('pt-BR')} t`;
-                                if (c.dataset.label === 'Δ Médio')
-                                    return `Médio: ${Math.round(realMed[i]).toLocaleString('pt-BR')} t`;
-                                if (c.dataset.label === 'Δ Otimista')
-                                    return `Otimista: ${Math.round(realOt[i]).toLocaleString('pt-BR')} t`;
+                                if (c.dataset.label === 'Seguro')
+                                    return `Seguro: ${Math.round(realPess[i]).toLocaleString('pt-BR')} t`;
+                                if (c.dataset.label === 'Atenção')
+                                    return `Atenção: ${Math.round(realMed[i]).toLocaleString('pt-BR')} t`;
+                                if (c.dataset.label === 'Alerta')
+                                    return `Alerta: ${Math.round(realOt[i]).toLocaleString('pt-BR')} t`;
                                 if (c.dataset.label === 'Budget')
                                     return `Budget: ${Math.round(c.parsed.y).toLocaleString('pt-BR')} t`;
                                 // Cenário personalizado
