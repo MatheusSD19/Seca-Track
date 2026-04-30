@@ -4107,8 +4107,8 @@
             : rotasDoCenario.filter(isRotaDestinoFinal)
         ).filter(isRotaDestinoFinal);
 
-        if (rotasExibidas.length === 0 || dadosRios.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-gray-500 py-6">Cadastre rotas e importe dados de rio para visualizar o dashboard</td></tr>';
+        const _dashEmpty = (msg) => {
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center text-gray-500 py-6">${msg}</td></tr>`;
             document.getElementById('resumoOtimista').textContent = '-';
             document.getElementById('resumoMedio').textContent = '-';
             document.getElementById('resumoPessimista').textContent = '-';
@@ -4117,6 +4117,23 @@
             renderAlertas([]);
             renderChartDashboard({labels:[],metas:[],otimista:[],medio:[],pessimista:[]});
             renderChartComparativoCenarios(ano, mesesDashboard);
+        };
+
+        if (rotasExibidas.length === 0 || dadosRios.length === 0) {
+            _dashEmpty('Cadastre rotas e importe dados de rio para visualizar o módulo.');
+            return;
+        }
+
+        // Diagnóstico: verifica se os rios das rotas têm projeção disponível
+        const riosDasRotas = [...new Set(rotasExibidas.map(r => r.rio).filter(Boolean))];
+        const riosSemDados = riosDasRotas.filter(rio => !calcularProjecaoRio(rio));
+        if (riosDasRotas.length === 0) {
+            _dashEmpty('As rotas configuradas não têm um rio associado. Edite as rotas no módulo <b>Rotas &amp; Metas</b> e selecione o rio correspondente.');
+            return;
+        }
+        if (riosSemDados.length === riosDasRotas.length) {
+            const nomes = riosSemDados.map(r => `<b>${r}</b>`).join(', ');
+            _dashEmpty(`Dados históricos insuficientes para o(s) rio(s): ${nomes}.<br><span class="text-xs">Acesse <b>Nível dos Rios</b> e importe ao menos 3 medições históricas para cada rio antes de usar este módulo.</span>`);
             return;
         }
 
@@ -4275,6 +4292,12 @@
                     chartData.pessimista.push(capPe.total);
                 }
             });
+        }
+
+        // Diagnóstico: capacidade 0 com dados disponíveis → empurradores/barcaças
+        if (totOt === 0 && totMe === 0 && totPe === 0 && rotasExibidas.length > 0 && chartData.labels.length === 0) {
+            _dashEmpty('Capacidade calculada como zero. Verifique se as rotas possuem <b>empurradores configurados</b> com <b>barcaças atribuídas</b> e se as cidades de origem/destino estão marcadas corretamente.');
+            return;
         }
 
         document.getElementById('resumoOtimista').textContent   = Math.round(totOt).toLocaleString('pt-BR') + ' t';
