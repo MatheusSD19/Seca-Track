@@ -1915,7 +1915,7 @@
 
         // Datasets dos cenários customizados
         (variaveis.cenariosCustom || []).forEach(c => {
-            if (cenariosRioOcultos.has(c.id)) return;
+            if (cenariosRioOcultos.has(String(c.id))) return;
             const ds = (proj.custom[c.id] || []).slice();
             if (lastHistIdx >= 0 && proj.historico[lastHistIdx] !== null) ds[lastHistIdx] = proj.historico[lastHistIdx];
             datasets.push({
@@ -2084,7 +2084,7 @@
         ];
         const custom = (variaveis.cenariosCustom || []).map(c => ({ id: c.id, label: c.nome, cor: c.cor }));
         container.innerHTML = [...base, ...custom].map(c => {
-            const ativo = !cenariosRioOcultos.has(c.id);
+            const ativo = !cenariosRioOcultos.has(String(c.id));
             return `<button onclick="toggleCenarioRio('${c.id}')"
                 class="text-xs px-2 py-0.5 rounded-full border font-medium transition-all"
                 style="${ativo
@@ -4310,20 +4310,19 @@
         if (dashViewMode === 'mes' && cenariosCustomLista.length > 0) {
             cenariosCustomLista.forEach(cenConf => {
                 const capPorLabel = {};
-                rotasExibidas.forEach(rota => {
-                    for (const mes of mesesDashboard) {
-                        if (!rotaAtivaNoMes(rota, mes)) continue;
-                        const nivelRioMap = {};
-                        rotasExibidas.forEach(r => {
-                            const nivel = getNivelRioCenarioAnoMes(r.rio, ano, mes, cenConf.id);
-                            if (nivel !== null && nivel !== undefined) nivelRioMap[r.id] = nivel;
-                        });
-                        const caps = calcularCapacidadesAjustadas(rotasExibidas, mes, ano, nivelRioMap, cenConf.id).capacidades;
-                        const label = MESES[mes];
-                        if (!capPorLabel[label]) capPorLabel[label] = 0;
-                        if (isRotaDestinoFinal(rota)) capPorLabel[label] += caps[rota.id]?.total || 0;
-                    }
-                });
+                for (const mes of mesesDashboard) {
+                    const nivelRioMap = {};
+                    rotasDoCenario.forEach(r => {
+                        const nivel = getNivelRioCenarioAnoMes(r.rio, ano, mes, cenConf.id);
+                        if (nivel !== null && nivel !== undefined) nivelRioMap[r.id] = nivel;
+                    });
+                    const caps = calcularCapacidadesAjustadas(rotasDoCenario, mes, ano, nivelRioMap, cenConf.id).capacidades;
+                    const label = MESES[mes];
+                    if (!capPorLabel[label]) capPorLabel[label] = 0;
+                    rotasExibidas.forEach(rota => {
+                        if (rotaAtivaNoMes(rota, mes)) capPorLabel[label] += caps[rota.id]?.total || 0;
+                    });
+                }
                 chartData.custom.push({
                     id: cenConf.id,
                     nome: cenConf.nome,
