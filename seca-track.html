@@ -446,9 +446,16 @@
                         </div>
                     </div>
                 </div>
+                <!-- Filtro de combustíveis -->
+                <div id="cvFiltrosCombWrapper" class="hidden mt-3 pt-3 border-t border-gray-100">
+                    <div class="flex items-center gap-3 flex-wrap">
+                        <span class="text-xs font-medium text-gray-600 shrink-0">Combustíveis:</span>
+                        <div id="cvFiltrosCombustiveis" class="flex gap-2 flex-wrap"></div>
+                    </div>
+                </div>
             </div>
 
-            <!-- Gráfico -->
+            <!-- Gráfico de barras mensal -->
             <div class="card p-6 mb-6">
                 <h2 class="text-lg font-semibold mb-1 flex items-center gap-2">
                     <i data-lucide="bar-chart-2" class="w-5 h-5 text-blue-600"></i>
@@ -456,6 +463,28 @@
                 </h2>
                 <p class="text-xs text-gray-500 mb-4">Calculado automaticamente com base nas viagens previstas por cenário × consumo (L/H) × horas de viagem dos empurradores.</p>
                 <div class="chart-container" style="height:360px"><canvas id="chartCustoVariavel"></canvas></div>
+            </div>
+
+            <!-- Gráficos de pizza anuais -->
+            <div class="grid-3 mb-6">
+                <div class="card p-5">
+                    <h3 class="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <i data-lucide="pie-chart" class="w-4 h-4 text-blue-600"></i> Consumo Anual por Combustível
+                    </h3>
+                    <div style="position:relative;height:260px"><canvas id="chartPieCombustivel"></canvas></div>
+                </div>
+                <div class="card p-5">
+                    <h3 class="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <i data-lucide="pie-chart" class="w-4 h-4 text-blue-600"></i> Consumo Anual por Empurrador
+                    </h3>
+                    <div style="position:relative;height:260px"><canvas id="chartPieEmpurrador"></canvas></div>
+                </div>
+                <div class="card p-5">
+                    <h3 class="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <i data-lucide="pie-chart" class="w-4 h-4 text-blue-600"></i> Consumo Anual por Rota
+                    </h3>
+                    <div style="position:relative;height:260px"><canvas id="chartPieRota"></canvas></div>
+                </div>
             </div>
 
             <!-- Tabela por rota -->
@@ -1158,7 +1187,10 @@
     let chartTempoParada = null;
     let consumos = [];
     let registrosConsumo = [];
-    let chartCustoVariavel = null;
+    let chartCustoVariavel  = null;
+    let chartPieCombustivel = null;
+    let chartPieEmpurrador  = null;
+    let chartPieRota        = null;
 
     // File System Access
     let dbDirHandle = null;      // DirectoryHandle escolhido pelo usuário
@@ -3100,7 +3132,13 @@
     }
 
     // ── Custo Variável – cálculo automático ─────────────────────────────────
-    let _cvChartMode = 'litros'; // 'litros' | 'litrosTon' | 'reaisTon'
+    let _cvChartMode    = 'litros'; // 'litros' | 'litrosTon' | 'reaisTon'
+    let _cvCombSelected = null;     // null = todos; Set de ids = filtrado
+    let chartPieCombustivel = null;
+    let chartPieEmpurrador  = null;
+    let chartPieRota        = null;
+
+    const CV_COLORS = ['#3b82f6','#f59e0b','#10b981','#ef4444','#8b5cf6','#f97316','#06b6d4','#ec4899','#84cc16','#14b8a6'];
 
     function setCVChartMode(mode) {
         _cvChartMode = mode;
@@ -3114,8 +3152,49 @@
         renderChartCustoVariavel();
     }
 
+    function toggleCVCombustivel(id) {
+        if (!_cvCombSelected) {
+            // Estava "todos" — começa a filtrar, deixando só este desmarcado = só este
+            // Na verdade: clicou em um quando todos estavam selecionados → seleciona SÓ este
+            const todosIds = consumos.map(c=>c.id);
+            _cvCombSelected = new Set(todosIds.filter(cid=>cid!==id));
+        } else {
+            if (_cvCombSelected.has(id)) {
+                _cvCombSelected.delete(id);
+                if (_cvCombSelected.size === 0) _cvCombSelected = null; // volta a "todos"
+            } else {
+                _cvCombSelected.add(id);
+                if (_cvCombSelected.size === consumos.length) _cvCombSelected = null;
+            }
+        }
+        renderFiltrosCombustiveis();
+        renderChartCustoVariavel();
+        renderPieCharts();
+    }
+
+    function renderFiltrosCombustiveis(allRows) {
+        const wrapper = document.getElementById('cvFiltrosCombWrapper');
+        const container = document.getElementById('cvFiltrosCombustiveis');
+        if (!wrapper || !container) return;
+
+        // Descobre quais combustíveis aparecem nos dados
+        const ids = allRows ? [...new Set(allRows.map(r=>r.comb.id))] : consumos.map(c=>c.id);
+        if (ids.length === 0) { wrapper.classList.add('hidden'); return; }
+        wrapper.classList.remove('hidden');
+
+        container.innerHTML = ids.map((cid, idx) => {
+            const comb = consumos.find(c=>c.id===cid);
+            const ativo = !_cvCombSelected || !_cvCombSelected.has(cid);
+            const cor = CV_COLORS[idx % CV_COLORS.length];
+            const cls = ativo
+                ? `text-xs px-3 py-1 rounded-full border-2 font-medium cursor-pointer transition-all text-white`
+                : `text-xs px-3 py-1 rounded-full border-2 font-medium cursor-pointer transition-all bg-white text-gray-500 border-gray-300`;
+            const style = ativo ? `background:${cor};border-color:${cor}` : '';
+            return `<button class="${cls}" style="${style}" onclick="toggleCVCombustivel(${cid})">${comb?.nome||'?'}</button>`;
+        }).join('');
+    }
+
     // Calcula consumo automático para o ano/cenário/cenárioRota selecionados.
-    // Retorna: { byMonth: [{ mes, rota, empurrador, combustivel, viagens, horas, litros, tons, reais }] }
     function calcularConsumoAutomatico(ano, cenarioNivel, cenarioRotaId) {
         const rotasAtivas = cenarioRotaId
             ? (cenariosRotas.find(c=>c.id===parseFloat(cenarioRotaId))?.rotasIds||[]).map(rid=>rotas.find(r=>r.id===rid)).filter(Boolean)
@@ -3149,6 +3228,12 @@
         return rows;
     }
 
+    // Filtra rows pelos combustíveis selecionados
+    function filtrarRowsCombustiveis(rows) {
+        if (!_cvCombSelected) return rows;
+        return rows.filter(r => !_cvCombSelected.has(r.comb.id));
+    }
+
     function updateCustoVariavel() {
         renderTabelaConsumos();
 
@@ -3167,12 +3252,16 @@
 
         const rows = calcularConsumoAutomatico(ano, cenarioNivel, cenarioRotaId);
 
+        renderFiltrosCombustiveis(rows);
+
+        const rowsFiltrados = filtrarRowsCombustiveis(rows);
+
         // Tabela detalhada
         const tbody = document.getElementById('tbodyConsumoRota'); if(!tbody) return;
         if (rows.length === 0) {
             tbody.innerHTML='<tr><td colspan="10" class="text-center text-gray-400 py-4">Sem dados — cadastre rotas com empurradores que possuam consumo configurado.</td></tr>';
         } else {
-            tbody.innerHTML = rows.map(r => {
+            tbody.innerHTML = rowsFiltrados.map(r => {
                 const lpt = r.tons>0 ? r.litros/r.tons : 0;
                 const rpt = r.tons>0 ? r.reais/r.tons  : 0;
                 return `<tr>
@@ -3190,25 +3279,29 @@
             }).join('');
         }
 
-        renderChartCustoVariavel(rows);
+        renderChartCustoVariavel(rowsFiltrados);
+        renderPieCharts(rowsFiltrados);
     }
 
     function renderChartCustoVariavel(rows) {
-        rows = rows || calcularConsumoAutomatico(
-            parseInt(document.getElementById('cvAno')?.value)||new Date().getFullYear(),
-            document.getElementById('cvCenarioNivel')?.value||'medio',
-            document.getElementById('cvCenarioRota')?.value||''
-        );
+        if (!rows) {
+            const ano = parseInt(document.getElementById('cvAno')?.value)||new Date().getFullYear();
+            rows = filtrarRowsCombustiveis(calcularConsumoAutomatico(
+                ano,
+                document.getElementById('cvCenarioNivel')?.value||'medio',
+                document.getElementById('cvCenarioRota')?.value||''
+            ));
+        }
 
-        // Agrega por mês × combustível
-        const combIds = [...new Set(rows.map(r=>r.comb.id))];
-        const CHART_COLORS = ['#3b82f6','#f59e0b','#10b981','#ef4444','#8b5cf6','#f97316','#06b6d4','#ec4899'];
+        // Agrupa por combustível (preservando a ordem dos combustíveis cadastrados)
+        const combIds = [...new Set(consumos.map(c=>c.id))].filter(cid => rows.some(r=>r.comb.id===cid));
 
         const datasets = combIds.map((cid, idx) => {
             const comb = consumos.find(c=>c.id===cid);
+            const cor  = CV_COLORS[idx % CV_COLORS.length];
             const data = MESES.map((_,mes) => {
                 const subset = rows.filter(r=>r.comb.id===cid && r.mes===mes);
-                if (subset.length===0) return 0;
+                if (!subset.length) return 0;
                 const litros = subset.reduce((s,r)=>s+r.litros,0);
                 const tons   = subset.reduce((s,r)=>s+r.tons,0);
                 const reais  = subset.reduce((s,r)=>s+r.reais,0);
@@ -3217,25 +3310,81 @@
                 if (_cvChartMode==='reaisTon')  return tons>0 ? parseFloat((reais/tons).toFixed(2))  : 0;
                 return 0;
             });
-            return { label: comb?.nome||'?', data, backgroundColor: CHART_COLORS[idx%CHART_COLORS.length], borderColor: CHART_COLORS[idx%CHART_COLORS.length], borderWidth:2, fill:false, tension:0.3 };
+            return { label: comb?.nome||'?', data, backgroundColor: cor + 'cc', borderColor: cor, borderWidth:1 };
         });
 
         const canvas = document.getElementById('chartCustoVariavel'); if(!canvas) return;
         if (chartCustoVariavel) { chartCustoVariavel.destroy(); chartCustoVariavel=null; }
 
         const yLabel = { litros:'Litros', litrosTon:'L/ton', reaisTon:'R$/ton' }[_cvChartMode]||'';
+        const stacked = _cvChartMode === 'litros';
         chartCustoVariavel = new Chart(canvas, {
-            type: 'line',
+            type: 'bar',
             data: { labels: MESES, datasets },
             options: {
                 responsive:true, maintainAspectRatio:false,
                 plugins: { legend:{ position:'bottom' } },
                 scales: {
-                    x: { grid:{ color:'rgba(0,0,0,0.05)' } },
-                    y: { title:{ display:true, text:yLabel }, ticks:{ callback: v=>Number(v).toLocaleString('pt-BR') }, beginAtZero:true }
+                    x: { stacked, grid:{ color:'rgba(0,0,0,0.05)' } },
+                    y: { stacked, title:{ display:true, text:yLabel }, ticks:{ callback: v=>Number(v).toLocaleString('pt-BR') }, beginAtZero:true }
                 }
             }
         });
+    }
+
+    function renderPieCharts(rows) {
+        if (!rows) {
+            const ano = parseInt(document.getElementById('cvAno')?.value)||new Date().getFullYear();
+            rows = filtrarRowsCombustiveis(calcularConsumoAutomatico(
+                ano,
+                document.getElementById('cvCenarioNivel')?.value||'medio',
+                document.getElementById('cvCenarioRota')?.value||''
+            ));
+        }
+
+        const pieOpts = (titulo) => ({
+            responsive:true, maintainAspectRatio:false,
+            plugins:{
+                legend:{ position:'bottom', labels:{ font:{ size:11 }, boxWidth:14 } },
+                tooltip:{ callbacks:{ label: ctx => ` ${ctx.label}: ${Number(ctx.raw).toLocaleString('pt-BR',{maximumFractionDigits:0})} L` } }
+            }
+        });
+
+        // Pizza 1 — por combustível
+        const mapComb = {};
+        rows.forEach(r=>{ mapComb[r.comb.id] = (mapComb[r.comb.id]||{nome:r.comb.nome, total:0}); mapComb[r.comb.id].total+=r.litros; });
+        const combEntries = Object.values(mapComb);
+        const c1 = document.getElementById('chartPieCombustivel'); if(c1){
+            if (chartPieCombustivel){chartPieCombustivel.destroy();chartPieCombustivel=null;}
+            if (combEntries.length) chartPieCombustivel = new Chart(c1,{type:'doughnut',data:{
+                labels: combEntries.map(e=>e.nome),
+                datasets:[{data:combEntries.map(e=>Math.round(e.total)), backgroundColor:CV_COLORS.slice(0,combEntries.length), borderWidth:2}]
+            }, options: pieOpts()});
+        }
+
+        // Pizza 2 — por empurrador
+        const mapEmp = {};
+        rows.forEach(r=>{ mapEmp[r.emp.id] = (mapEmp[r.emp.id]||{nome:r.emp.nome, total:0}); mapEmp[r.emp.id].total+=r.litros; });
+        const empEntries = Object.values(mapEmp);
+        const c2 = document.getElementById('chartPieEmpurrador'); if(c2){
+            if (chartPieEmpurrador){chartPieEmpurrador.destroy();chartPieEmpurrador=null;}
+            if (empEntries.length) chartPieEmpurrador = new Chart(c2,{type:'doughnut',data:{
+                labels: empEntries.map(e=>e.nome),
+                datasets:[{data:empEntries.map(e=>Math.round(e.total)), backgroundColor:CV_COLORS.slice(0,empEntries.length), borderWidth:2}]
+            }, options: pieOpts()});
+        }
+
+        // Pizza 3 — por rota
+        const mapRota = {};
+        rows.forEach(r=>{ mapRota[r.rota.id] = (mapRota[r.rota.id]||{nome:r.rota.nome, total:0}); mapRota[r.rota.id].total+=r.litros; });
+        const rotaEntries = Object.values(mapRota);
+        const c3 = document.getElementById('chartPieRota'); if(c3){
+            if (chartPieRota){chartPieRota.destroy();chartPieRota=null;}
+            if (rotaEntries.length) chartPieRota = new Chart(c3,{type:'doughnut',data:{
+                labels: rotaEntries.map(e=>e.nome),
+                datasets:[{data:rotaEntries.map(e=>Math.round(e.total)), backgroundColor:CV_COLORS.slice(0,rotaEntries.length), borderWidth:2}]
+            }, options: pieOpts()});
+        }
     }
     // ==========================================================================
     // MÓDULO 3: ROTAS
