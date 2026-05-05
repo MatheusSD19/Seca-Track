@@ -175,7 +175,16 @@
                         <span class="text-xs font-medium text-gray-600 flex items-center gap-1 mt-1 shrink-0">
                             <i data-lucide="history" class="w-3 h-3"></i> Comparar com anos:
                         </span>
-                        <div id="botoesAnosHistoricos" class="flex gap-2 flex-wrap"></div>
+                        <div id="dropdownAnosHistoricos" class="relative">
+                            <button onclick="toggleDropdownAnos(event)" id="btnDropdownAnos"
+                                class="text-xs px-3 py-1 rounded border border-gray-300 bg-white text-gray-600 hover:border-gray-500 flex items-center gap-2 min-w-[150px] justify-between">
+                                <span id="labelDropdownAnos">Selecionar anos...</span>
+                                <i data-lucide="chevron-down" class="w-3 h-3 shrink-0"></i>
+                            </button>
+                            <div id="listaDropdownAnos"
+                                class="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded shadow-lg z-50 min-w-[150px] max-h-48 overflow-y-auto hidden">
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="mt-3 pt-3 border-t border-gray-100" id="infoUltimaRegua" style="display:none">
@@ -2251,8 +2260,8 @@
 
     function atualizarBotoesAnosHistoricos(rioSel) {
         const painel = document.getElementById('painelAnosHistoricos');
-        const container = document.getElementById('botoesAnosHistoricos');
-        if (!painel || !container) return;
+        const lista = document.getElementById('listaDropdownAnos');
+        if (!painel || !lista) return;
         const anoAtual = new Date().getFullYear();
         const anos = [...new Set(
             dadosRios
@@ -2261,11 +2270,40 @@
         )].filter(a => a < anoAtual).sort((a, b) => b - a);
         if (anos.length === 0) { painel.style.display = 'none'; return; }
         painel.style.display = '';
-        container.innerHTML = anos.map(ano => {
+        lista.innerHTML = anos.map(ano => {
             const ativo = anosHistoricoSelecionados.has(ano);
-            return `<button onclick="toggleAnoHistorico(${ano})"
-                class="text-xs px-2 py-0.5 rounded-full border font-medium transition-all ${ativo ? 'bg-gray-700 text-white border-gray-700' : 'bg-white text-gray-600 border-gray-300 hover:border-gray-500'}">${ano}</button>`;
+            return `<label class="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-xs text-gray-700 select-none">
+                <input type="checkbox" ${ativo ? 'checked' : ''} onchange="toggleAnoHistorico(${ano})" class="accent-gray-700">
+                ${ano}
+            </label>`;
         }).join('');
+        atualizarLabelDropdownAnos();
+    }
+
+    function atualizarLabelDropdownAnos() {
+        const label = document.getElementById('labelDropdownAnos');
+        if (!label) return;
+        const selecionados = [...anosHistoricoSelecionados].sort((a, b) => b - a);
+        label.textContent = selecionados.length > 0 ? selecionados.join(', ') : 'Selecionar anos...';
+    }
+
+    function toggleDropdownAnos(e) {
+        e.stopPropagation();
+        const lista = document.getElementById('listaDropdownAnos');
+        if (!lista) return;
+        const aberto = !lista.classList.contains('hidden');
+        if (aberto) {
+            lista.classList.add('hidden');
+        } else {
+            lista.classList.remove('hidden');
+            document.addEventListener('click', function _fecharDropdownAnos(ev) {
+                const wrap = document.getElementById('dropdownAnosHistoricos');
+                if (wrap && !wrap.contains(ev.target)) {
+                    lista.classList.add('hidden');
+                    document.removeEventListener('click', _fecharDropdownAnos);
+                }
+            });
+        }
     }
 
     function toggleAnoHistorico(ano) {
@@ -2274,6 +2312,7 @@
         } else {
             anosHistoricoSelecionados.add(ano);
         }
+        atualizarLabelDropdownAnos();
         saveToLocalStorage();
         updateRioChart();
     }
