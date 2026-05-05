@@ -263,7 +263,11 @@
                         <i data-lucide="target" class="w-5 h-5 text-purple-600"></i>
                         Aderência das Previsões
                     </h2>
-                    <span class="text-xs text-gray-500">Projeção (anos anteriores) vs. nível observado em <span id="aderenciaAno"></span></span>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <label for="aderenciaCenarioSelect" class="text-xs text-gray-500">Cenário:</label>
+                        <select id="aderenciaCenarioSelect" class="input-field text-xs py-1" style="width:auto" onchange="onChangeAderenciaCenario()"></select>
+                        <span class="text-xs text-gray-500">Projeção (anos anteriores) vs. nível observado em <span id="aderenciaAno"></span></span>
+                    </div>
                 </div>
                 <div class="grid-3 mb-4" id="aderenciaResumo"></div>
                 <div class="table-container">
@@ -1196,6 +1200,7 @@
     let ativosTempoParadaVisiveis = {}; // kept for compat – not used after refactor
     let tpVesselsHidden  = new Set(); // vessel names hidden in Tempo de Parada
     let tpCenariosHidden = new Set(); // scenario IDs hidden in Tempo de Parada
+    let aderenciaCenarioSelecionado = null; // cenário selecionado para cálculo de aderência
     let _pulmaoCache = []; // cache de dados de pulmão para o modal de detalhes
     let chartTempoParada = null;
     let consumos = [];
@@ -2705,7 +2710,16 @@
         updateRioChart();
     }
 
-    function calcularAderencia(nomeRio) {
+    function listarCenariosAderencia() {
+        return [
+            { id: 'otimista', nome: 'Otimista' },
+            { id: 'medio', nome: 'Médio' },
+            { id: 'pessimista', nome: 'Pessimista' },
+            ...(variaveis.cenariosCustom || []).map(c => ({ id: c.id, nome: c.nome }))
+        ];
+    }
+
+    function calcularAderencia(nomeRio, cenarioId = 'medio') {
         const dadosRio = dadosRios.filter(r => r.nome === nomeRio);
         const anoAtual = new Date().getFullYear();
 
@@ -2732,12 +2746,30 @@
         for (let m = 0; m < 12; m++) {
             if (obsPorMes[m].length === 0 || mediaMes[m] === null) continue;
             const real = obsPorMes[m].reduce((a,b)=>a+b,0)/obsPorMes[m].length;
-            const proj = mediaMes[m];
+            const base = mediaMes[m];
+            const std = buckets[m].length > 1 ? Math.sqrt(buckets[m].reduce((s,v) => s + Math.pow(v - base, 2), 0) / buckets[m].length) : 0;
+            const proj = projetarNivelPorCenario(cenarioId, m, base, std);
             const erro = real - proj;
             const erroPct = proj !== 0 ? (Math.abs(erro) / Math.abs(proj)) * 100 : null;
             resultados.push({ mes: m, real, projetado: proj, erro, erroAbs: Math.abs(erro), erroPct });
         }
         return resultados.length ? resultados : null;
+    }
+
+    function obterMetricasAderencia(resultados) {
+        const erroMedio = resultados.reduce((s,r) => s + r.erroAbs, 0) / resultados.length;
+        const validos = resultados.filter(r => r.erroPct !== null);
+        const erroPctMedio = validos.length ? validos.reduce((s,r) => s + r.erroPct, 0) / validos.length : 0;
+        const acuracia = Math.max(0, 100 - erroPctMedio);
+        return { erroMedio, erroPctMedio, acuracia };
+    }
+
+    function onChangeAderenciaCenario() {
+        const sel = document.getElementById('aderenciaCenarioSelect');
+        const rioSel = document.getElementById('filtroRio')?.value;
+        if (!sel || !rioSel) return;
+        aderenciaCenarioSelecionado = sel.value;
+        renderAderencia(rioSel);
     }
 
     function renderAderencia(nomeRio) {
@@ -2746,13 +2778,31 @@
         const anoAtual = new Date().getFullYear();
         document.getElementById('aderenciaAno').textContent = anoAtual;
 
-        const resultados = calcularAderencia(nomeRio);
-        if (!resultados) { card.style.display = 'none'; return; }
+        const cenarios = listarCenariosAderencia();
+        const avaliados = cenarios
+            .map(c => {
+                const resultados = calcularAderencia(nomeRio, c.id);
+                if (!resultados) return null;
+                return { ...c, resultados, ...obterMetricasAderencia(resultados) };
+            })
+            .filter(Boolean);
+        if (!avaliados.length) { card.style.display = 'none'; return; }
         card.style.display = '';
 
-        const erroMedio = resultados.reduce((s,r) => s + r.erroAbs, 0) / resultados.length;
-        const erroPctMedio = resultados.filter(r => r.erroPct !== null).reduce((s,r) => s + r.erroPct, 0) / resultados.filter(r => r.erroPct !== null).length;
-        const acuracia = Math.max(0, 100 - erroPctMedio);
+        const melhor = [...avaliados].sort((a, b) => b.acuracia - a.acuracia)[0];
+        if (!aderenciaCenarioSelecionado || !avaliados.some(c => c.id === aderenciaCenarioSelecionado)) {
+            aderenciaCenarioSelecionado = melhor.id;
+        }
+        const atual = avaliados.find(c => c.id === aderenciaCenarioSelecionado) || melhor;
+        const { resultados, erroMedio, erroPctMedio, acuracia } = atual;
+
+        const select = document.getElementById('aderenciaCenarioSelect');
+        if (select) {
+            select.innerHTML = avaliados
+                .sort((a, b) => b.acuracia - a.acuracia)
+                .map(c => `<option value="${c.id}" ${c.id === atual.id ? 'selected' : ''}>${c.nome} (${c.acuracia.toFixed(1)}%)</option>`)
+                .join('');
+        }
 
         const cor = acuracia >= 85 ? 'green' : acuracia >= 70 ? 'yellow' : 'red';
         const corClasse = { green: 'text-green-600 border-green-500', yellow: 'text-yellow-600 border-yellow-500', red: 'text-red-600 border-red-500' }[cor];
