@@ -126,82 +126,6 @@
 
         <!-- MÓDULO 1: NÍVEL DOS RIOS -->
         <div id="content-rios" class="tab-content">
-            <div class="grid-2">
-                <div class="card p-6">
-                    <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
-                        <i data-lucide="upload-cloud" class="w-5 h-5 text-blue-600"></i>
-                        Importar Dados Históricos
-                    </h2>
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Upload Excel/CSV</label>
-                            <input type="file" id="excelUpload" accept=".xlsx,.xls,.csv" class="input-field" onchange="handleExcelUpload(this)">
-                            <p class="text-xs text-gray-500 mt-1">Colunas esperadas: data (formato DD/MM/AAAA), nome do rio, nível do rio. O nome exato das colunas é flexível.</p>
-                        </div>
-                        <div class="relative">
-                            <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-gray-300"></div></div>
-                            <div class="relative flex justify-center text-sm"><span class="px-2 bg-white text-gray-500">ou</span></div>
-                        </div>
-                        <button onclick="openManualEntryModal()" class="btn-secondary w-full flex items-center justify-center gap-2">
-                            <i data-lucide="plus" class="w-4 h-4"></i> Inserir Manualmente
-                        </button>
-                    </div>
-
-                    <div class="mt-6 pt-6 border-t border-gray-200">
-                        <div class="flex justify-between items-center mb-3">
-                            <h3 class="text-sm font-medium text-gray-700">Variáveis de Navegação</h3>
-                            <button onclick="openModal('cenarios')" class="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1">
-                                <i data-lucide="sliders" class="w-3 h-3"></i> Ajustar por cenário
-                            </button>
-                        </div>
-                        <div class="grid-2">
-                            <div>
-                                <label class="block text-xs text-gray-500 mb-1">Ábaco (global)</label>
-                                <input type="number" id="abaco" value="1.03" step="0.01" class="input-field" onchange="updateVariaveis()">
-                            </div>
-                            <div>
-                                <label class="block text-xs text-gray-500 mb-1">FAQ (global)</label>
-                                <input type="number" id="faq" value="0.50" step="0.01" class="input-field" onchange="updateVariaveis()">
-                            </div>
-                        </div>
-                        <p class="text-xs text-gray-500 mt-2">Nível mínimo navegável = Calado da Embarcação − Ábaco + FAQ</p>
-                        <div class="mt-3 pt-3 border-t border-gray-100">
-                            <label class="block text-xs text-gray-500 mb-1">
-                                Período considerado para o cálculo de tendência
-                                <span class="text-gray-400">(padrão: 3 anos)</span>
-                            </label>
-                            <div class="flex items-center gap-2">
-                                <input type="number" id="anosProjecao" value="3" min="1" max="20" step="1"
-                                       class="input-field" style="width:5rem" onchange="updateVariaveis()">
-                                <span class="text-xs text-gray-400" id="anosProjecaoInfo">—</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="card p-6">
-                    <div class="flex justify-between items-center mb-4">
-                        <h2 class="text-lg font-semibold flex items-center gap-2">
-                            <i data-lucide="database" class="w-5 h-5 text-blue-600"></i>
-                            Dados Carregados
-                        </h2>
-                        <div class="flex items-center gap-2">
-                            <select id="filtroRio" class="input-field text-sm" style="width:auto" onchange="renderTabelaRios(); updateRioChart();">
-                                <option value="">Todos os rios</option>
-                            </select>
-                            <button onclick="clearRioData()" class="text-red-600 hover:text-red-800 text-sm">Limpar</button>
-                        </div>
-                    </div>
-                    <div class="table-container max-h-64 overflow-y-auto">
-                        <table id="tabelaRios">
-                            <thead><tr><th>Data</th><th>Rio</th><th>Nível (m)</th><th>Ações</th></tr></thead>
-                            <tbody id="tbodyRios"></tbody>
-                        </table>
-                    </div>
-                    <p id="rioCount" class="text-sm text-gray-500 mt-2">Nenhum dado carregado</p>
-                </div>
-            </div>
-
             <div class="card p-6 mt-6">
                 <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
                     <h2 class="text-lg font-semibold flex items-center gap-2">
@@ -253,6 +177,9 @@
                         </span>
                         <div id="botoesAnosHistoricos" class="flex gap-2 flex-wrap"></div>
                     </div>
+                </div>
+                <div class="mt-3 pt-3 border-t border-gray-100" id="infoUltimaRegua" style="display:none">
+                    <p id="textoUltimaRegua" class="text-xs text-gray-600 leading-5"></p>
                 </div>
             </div>
 
@@ -345,6 +272,82 @@
                 <p class="text-xs text-gray-400 mt-2">
                     Histórico: interpolação entre medições reais diárias. Projeção: interpolação linear entre médias mensais (âncora no dia 15 de cada mês).
                 </p>
+            </div>
+
+            <div class="grid-2 mt-6">
+                <div class="card p-6">
+                    <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <i data-lucide="upload-cloud" class="w-5 h-5 text-blue-600"></i>
+                        Importar Dados Históricos
+                    </h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Upload Excel/CSV</label>
+                            <input type="file" id="excelUpload" accept=".xlsx,.xls,.csv" class="input-field" onchange="handleExcelUpload(this)">
+                            <p class="text-xs text-gray-500 mt-1">Colunas esperadas: data (formato DD/MM/AAAA), nome do rio, nível do rio. O nome exato das colunas é flexível.</p>
+                        </div>
+                        <div class="relative">
+                            <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-gray-300"></div></div>
+                            <div class="relative flex justify-center text-sm"><span class="px-2 bg-white text-gray-500">ou</span></div>
+                        </div>
+                        <button onclick="openManualEntryModal()" class="btn-secondary w-full flex items-center justify-center gap-2">
+                            <i data-lucide="plus" class="w-4 h-4"></i> Inserir Manualmente
+                        </button>
+                    </div>
+
+                    <div class="mt-6 pt-6 border-t border-gray-200">
+                        <div class="flex justify-between items-center mb-3">
+                            <h3 class="text-sm font-medium text-gray-700">Variáveis de Navegação</h3>
+                            <button onclick="openModal('cenarios')" class="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1">
+                                <i data-lucide="sliders" class="w-3 h-3"></i> Ajustar por cenário
+                            </button>
+                        </div>
+                        <div class="grid-2">
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">Ábaco (global)</label>
+                                <input type="number" id="abaco" value="1.03" step="0.01" class="input-field" onchange="updateVariaveis()">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-gray-500 mb-1">FAQ (global)</label>
+                                <input type="number" id="faq" value="0.50" step="0.01" class="input-field" onchange="updateVariaveis()">
+                            </div>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-2">Nível mínimo navegável = Calado da Embarcação − Ábaco + FAQ</p>
+                        <div class="mt-3 pt-3 border-t border-gray-100">
+                            <label class="block text-xs text-gray-500 mb-1">
+                                Período considerado para o cálculo de tendência
+                                <span class="text-gray-400">(padrão: 3 anos)</span>
+                            </label>
+                            <div class="flex items-center gap-2">
+                                <input type="number" id="anosProjecao" value="3" min="1" max="20" step="1"
+                                       class="input-field" style="width:5rem" onchange="updateVariaveis()">
+                                <span class="text-xs text-gray-400" id="anosProjecaoInfo">—</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg font-semibold flex items-center gap-2">
+                            <i data-lucide="database" class="w-5 h-5 text-blue-600"></i>
+                            Dados Carregados
+                        </h2>
+                        <div class="flex items-center gap-2">
+                            <select id="filtroRio" class="input-field text-sm" style="width:auto" onchange="renderTabelaRios(); updateRioChart();">
+                                <option value="">Todos os rios</option>
+                            </select>
+                            <button onclick="clearRioData()" class="text-red-600 hover:text-red-800 text-sm">Limpar</button>
+                        </div>
+                    </div>
+                    <div class="table-container max-h-64 overflow-y-auto">
+                        <table id="tabelaRios">
+                            <thead><tr><th>Data</th><th>Rio</th><th>Nível (m)</th><th>Ações</th></tr></thead>
+                            <tbody id="tbodyRios"></tbody>
+                        </table>
+                    </div>
+                    <p id="rioCount" class="text-sm text-gray-500 mt-2">Nenhum dado carregado</p>
+                </div>
             </div>
         </div>
 
@@ -1253,7 +1256,7 @@
         restoreUiFiltros();
 
         // Persiste filtros de UI ao alterar seleções
-        const filtroIds = ['filtroRio','dashFiltroRota','dashFiltroCenarioRota','dashFiltroPeriodo','dashFiltroAno'];
+        const filtroIds = ['filtroRio','dashFiltroRota','dashFiltroCenarioRota','dashFiltroPeriodo','dashFiltroAno','cvAno','cvCenarioNivel','cvCenarioRota'];
         filtroIds.forEach(id => {
             const el = document.getElementById(id);
             if (el) el.addEventListener('change', () => saveToLocalStorage());
@@ -1295,12 +1298,25 @@
     // ---------- Persistência ----------
     function serializeState() {
         const uiFiltros = {
+            currentTab:            document.querySelector('.tab-content:not(.hidden)')?.id?.replace('content-','') || 'rios',
             filtroRio:             document.getElementById('filtroRio')?.value             || '',
+            aderenciaCenario:      aderenciaCenarioSelecionado ?? null,
+            anosHistoricoSelecionados: [...anosHistoricoSelecionados],
+            cenariosRioOcultos:    [...cenariosRioOcultos],
+            tpVesselsHidden:       [...tpVesselsHidden],
+            tpCenariosHidden:      [...tpCenariosHidden],
             dashFiltroRota:        document.getElementById('dashFiltroRota')?.value        || '',
             dashFiltroCenarioRota: document.getElementById('dashFiltroCenarioRota')?.value || '',
             dashFiltroPeriodo:     document.getElementById('dashFiltroPeriodo')?.value     || 'restante',
             dashFiltroAno:         document.getElementById('dashFiltroAno')?.value         || '',
-            dashViewMode
+            dashViewMode,
+            dashCenariosVisiveis,
+            dashCenariosNoGrafico,
+            cvAno:                 document.getElementById('cvAno')?.value                 || '',
+            cvCenarioNivel:        document.getElementById('cvCenarioNivel')?.value        || 'medio',
+            cvCenarioRota:         document.getElementById('cvCenarioRota')?.value         || '',
+            cvChartMode:           _cvChartMode,
+            cvCombSelected:        _cvCombSelected ? [..._cvCombSelected] : null
         };
         return {
             dadosRios, empurradores, barcacas, rotas, cidadesDemanda, cenariosRotas, variaveis, consumos, registrosConsumo,
@@ -1345,6 +1361,17 @@
         if (data.uiFiltros?.dashViewMode) {
             dashViewMode = data.uiFiltros.dashViewMode;
         }
+        if (data.uiFiltros?.cvChartMode) {
+            _cvChartMode = data.uiFiltros.cvChartMode;
+        }
+        _cvCombSelected = Array.isArray(data.uiFiltros?.cvCombSelected) ? new Set(data.uiFiltros.cvCombSelected) : null;
+        anosHistoricoSelecionados = new Set(data.uiFiltros?.anosHistoricoSelecionados || []);
+        cenariosRioOcultos = new Set(data.uiFiltros?.cenariosRioOcultos || []);
+        tpVesselsHidden = new Set(data.uiFiltros?.tpVesselsHidden || []);
+        tpCenariosHidden = new Set(data.uiFiltros?.tpCenariosHidden || []);
+        aderenciaCenarioSelecionado = data.uiFiltros?.aderenciaCenario ?? null;
+        dashCenariosVisiveis = data.uiFiltros?.dashCenariosVisiveis || {};
+        dashCenariosNoGrafico = data.uiFiltros?.dashCenariosNoGrafico || {};
         // Guarda restantes para aplicar após updateAllViews popular os selects
         _pendingUiFiltros = data.uiFiltros || null;
     }
@@ -1362,6 +1389,9 @@
         setVal('dashFiltroCenarioRota', f.dashFiltroCenarioRota);
         setVal('dashFiltroPeriodo', f.dashFiltroPeriodo);
         setVal('dashFiltroAno', f.dashFiltroAno);
+        setVal('cvAno', f.cvAno);
+        setVal('cvCenarioNivel', f.cvCenarioNivel);
+        setVal('cvCenarioRota', f.cvCenarioRota);
         // Sincroniza botão de visão
         if (f.dashViewMode) {
             dashViewMode = f.dashViewMode;
@@ -1371,6 +1401,12 @@
                 btnRota.className = `text-xs px-3 py-1.5 font-medium transition-colors ${dashViewMode==='rota' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`;
                 btnMes.className  = `text-xs px-3 py-1.5 font-medium transition-colors ${dashViewMode==='mes'  ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`;
             }
+        }
+        if (f.cvChartMode) {
+            setCVChartMode(f.cvChartMode);
+        }
+        if (f.currentTab) {
+            switchTab(f.currentTab);
         }
     }
 
@@ -1562,6 +1598,7 @@
         if (tab === 'dashboard')      updateDashboard();
         if (tab === 'rios')           updateRioChart();
         if (tab === 'custovariavel')  updateCustoVariavel();
+        saveToLocalStorage();
     }
 
     function updateAllViews() {
@@ -2148,6 +2185,7 @@
         // Atualizar botões de cenários e anos históricos
         renderCenariosRioToggle();
         atualizarBotoesAnosHistoricos(rioSel);
+        renderInfoUltimaRegua(rioSel);
 
         // Linhas de calado mínimo dos ativos visíveis
         let corIdx = 0;
@@ -2236,7 +2274,68 @@
         } else {
             anosHistoricoSelecionados.add(ano);
         }
+        saveToLocalStorage();
         updateRioChart();
+    }
+
+    function formatNivel(nivel) {
+        return Number(nivel).toFixed(2).replace('.', ',');
+    }
+
+    function getResumoUltimaRegua(rioSel) {
+        const dadosRio = dadosRios
+            .filter(r => r.nome === rioSel)
+            .map(r => ({ ...r, d: new Date(r.data + 'T00:00:00') }))
+            .filter(r => !isNaN(r.d) && Number.isFinite(r.nivel))
+            .sort((a, b) => b.d - a.d);
+        if (!dadosRio.length) return null;
+
+        const ultimo = dadosRio[0];
+        const dia = ultimo.d.getDate();
+        const mes = ultimo.d.getMonth();
+        const anoAtual = ultimo.d.getFullYear();
+
+        const historicoMesmoDia = dadosRio
+            .filter(r => r.d.getFullYear() < anoAtual && r.d.getDate() === dia && r.d.getMonth() === mes)
+            .reduce((acc, r) => {
+                const ano = r.d.getFullYear();
+                if (!acc[ano]) acc[ano] = [];
+                acc[ano].push(r.nivel);
+                return acc;
+            }, {});
+
+        let maisProximo = null;
+        Object.entries(historicoMesmoDia).forEach(([ano, niveis]) => {
+            const media = niveis.reduce((a, b) => a + b, 0) / niveis.length;
+            const diff = Math.abs(media - ultimo.nivel);
+            if (!maisProximo || diff < maisProximo.diff || (diff === maisProximo.diff && Number(ano) > maisProximo.ano)) {
+                maisProximo = { ano: Number(ano), nivel: media, diff };
+            }
+        });
+
+        return { ultimo, maisProximo };
+    }
+
+    function renderInfoUltimaRegua(rioSel) {
+        const painel = document.getElementById('infoUltimaRegua');
+        const texto = document.getElementById('textoUltimaRegua');
+        if (!painel || !texto) return;
+
+        const resumo = getResumoUltimaRegua(rioSel);
+        if (!resumo) {
+            painel.style.display = 'none';
+            texto.textContent = '';
+            return;
+        }
+
+        const { ultimo, maisProximo } = resumo;
+        const primeiraLinha = `Última atualização da régua: <strong>${formatNivel(ultimo.nivel)} m</strong> em <strong>${formatDate(ultimo.data)}</strong>.`;
+        const segundaLinha = maisProximo
+            ? `Este nível está mais próximo da média histórica de <strong>${maisProximo.ano}</strong>, que foi de <strong>${formatNivel(maisProximo.nivel)} m</strong> na mesma data.`
+            : 'Não há histórico em outros anos para a mesma data.';
+
+        texto.innerHTML = `${primeiraLinha}<br>${segundaLinha}`;
+        painel.style.display = '';
     }
 
     function renderCenariosRioToggle() {
@@ -2265,6 +2364,7 @@
         } else {
             cenariosRioOcultos.add(id);
         }
+        saveToLocalStorage();
         updateRioChart();
     }
 
@@ -2452,20 +2552,24 @@
 
     function tpSelectAllVessels() {
         tpVesselsHidden.clear();
+        saveToLocalStorage();
         _reRenderTempoParada();
     }
     function tpClearAllVessels() {
         _tpGetAllVessels().forEach(v => tpVesselsHidden.add(v.nome));
+        saveToLocalStorage();
         _reRenderTempoParada();
     }
     function toggleTpVessel(nome) {
         if (tpVesselsHidden.has(nome)) tpVesselsHidden.delete(nome);
         else tpVesselsHidden.add(nome);
+        saveToLocalStorage();
         _reRenderTempoParada();
     }
     function toggleTpCenario(id) {
         if (tpCenariosHidden.has(id)) tpCenariosHidden.delete(id);
         else tpCenariosHidden.add(id);
+        saveToLocalStorage();
         _reRenderTempoParada();
     }
 
@@ -2832,6 +2936,7 @@
 
     function handleAderenciaCenarioChange() {
         aderenciaCenarioSelecionado = decodeAderenciaCenarioValue(document.getElementById('aderenciaCenarioSelect')?.value || '');
+        saveToLocalStorage();
         renderAderencia(getRioSelecionadoNoGrafico(), true);
     }
 
@@ -3281,6 +3386,7 @@
         });
         const titles={litros:'Consumo Médio Mensal — Litros Totais',litrosTon:'Consumo Médio Mensal — Litros por Tonelada (L/ton)',reaisTon:'Consumo Médio Mensal — Custo por Tonelada (R$/ton)'};
         const t=document.getElementById('cvChartTitle'); if(t) t.textContent=titles[mode]||'';
+        saveToLocalStorage();
         renderChartCustoVariavel();
     }
 
@@ -3299,6 +3405,7 @@
                 if (_cvCombSelected.size === consumos.length) _cvCombSelected = null;
             }
         }
+        saveToLocalStorage();
         renderFiltrosCombustiveis();
         renderChartCustoVariavel();
         renderPieCharts();
@@ -5077,6 +5184,7 @@
 
     function toggleDashCenario(id) {
         dashCenariosVisiveis[id] = !(id in dashCenariosVisiveis ? dashCenariosVisiveis[id] : true);
+        saveToLocalStorage();
         const ano = getDashboardAnoSelecionado();
         const mesesDashboard = getMesesDashboard(ano, getDashboardPeriodoSelecionado());
         renderCenariosCustomDashboard(ano, mesesDashboard);
@@ -5084,6 +5192,7 @@
 
     function toggleDashCenarioGrafico(id) {
         dashCenariosNoGrafico[id] = !dashCenariosNoGrafico[id];
+        saveToLocalStorage();
         updateDashboard();
     }
 
