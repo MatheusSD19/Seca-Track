@@ -263,9 +263,11 @@
                         <i data-lucide="target" class="w-5 h-5 text-purple-600"></i>
                         Aderência das Previsões
                     </h2>
-                    <div class="flex items-center gap-2 flex-wrap">
-                        <label for="aderenciaCenarioSelect" class="text-xs text-gray-500">Cenário:</label>
-                        <select id="aderenciaCenarioSelect" class="input-field text-xs py-1" style="width:auto" onchange="onChangeAderenciaCenario()"></select>
+                    <div class="flex items-center gap-3 flex-wrap">
+                        <label class="flex items-center gap-2 text-xs text-gray-500">
+                            <span>Cenário avaliado:</span>
+                            <select id="aderenciaCenarioSelect" class="input-field text-sm py-1" style="width:auto;min-width:180px" onchange="handleAderenciaCenarioChange()"></select>
+                        </label>
                         <span class="text-xs text-gray-500">Projeção (anos anteriores) vs. nível observado em <span id="aderenciaAno"></span></span>
                     </div>
                 </div>
@@ -1200,7 +1202,7 @@
     let ativosTempoParadaVisiveis = {}; // kept for compat – not used after refactor
     let tpVesselsHidden  = new Set(); // vessel names hidden in Tempo de Parada
     let tpCenariosHidden = new Set(); // scenario IDs hidden in Tempo de Parada
-    let aderenciaCenarioSelecionado = null; // cenário selecionado para cálculo de aderência
+    let aderenciaCenarioSelecionado = null;
     let _pulmaoCache = []; // cache de dados de pulmão para o modal de detalhes
     let chartTempoParada = null;
     let consumos = [];
@@ -2008,6 +2010,13 @@
         return cenConf ? projetarNivelCenarioCustom(cenConf, mes, base, std, ajuste) : medio;
     }
 
+    function getRioSelecionadoNoGrafico() {
+        const filtro = document.getElementById('filtroRio')?.value || '';
+        const rios = [...new Set(dadosRios.map(r => r.nome))];
+        if (rios.length === 0) return '';
+        return filtro || rios.find(r => calcularProjecaoRio(r)) || rios[0];
+    }
+
     function updateRioChart() {
         atualizarInfoAnosProjecao();
 
@@ -2035,7 +2044,7 @@
             return;
         }
 
-        const rioSel = filtro || rios.find(r => calcularProjecaoRio(r)) || rios[0];
+        const rioSel = getRioSelecionadoNoGrafico();
         const proj = calcularProjecaoRio(rioSel);
 
         if (!proj) {
@@ -2710,45 +2719,110 @@
         updateRioChart();
     }
 
-    function listarCenariosAderencia() {
+    function getAderenciaCenariosDisponiveis() {
         return [
-            { id: 'otimista', nome: 'Otimista' },
-            { id: 'medio', nome: 'Médio' },
-            { id: 'pessimista', nome: 'Pessimista' },
-            ...(variaveis.cenariosCustom || []).map(c => ({ id: c.id, nome: c.nome }))
+            { id: 'otimista', nome: 'Otimista', cor: '#10b981' },
+            { id: 'medio', nome: 'Médio', cor: '#3b82f6' },
+            { id: 'pessimista', nome: 'Pessimista', cor: '#ef4444' },
+            ...((variaveis.cenariosCustom || []).map(c => ({ id: c.id, nome: c.nome, cor: c.cor || '#6b7280' })))
         ];
     }
 
-    function calcularAderencia(nomeRio, cenarioId = 'medio') {
-        const dadosRio = dadosRios.filter(r => r.nome === nomeRio);
-        const anoAtual = new Date().getFullYear();
+    function encodeAderenciaCenarioValue(cenarioId) {
+        return typeof cenarioId === 'number' ? `custom:${cenarioId}` : `base:${cenarioId}`;
+    }
 
-        const dadosAtuais = dadosRio.filter(r => new Date(r.data + 'T00:00:00').getFullYear() === anoAtual);
-        if (dadosAtuais.length === 0) return null;
+    function decodeAderenciaCenarioValue(value) {
+        if (!value) return null;
+        if (value.startsWith('custom:')) {
+            const id = Number(value.split(':')[1]);
+            return Number.isFinite(id) ? id : null;
+        }
+        return value.replace(/^base:/, '');
+    }
 
-        const dadosHist = dadosRio.filter(r => new Date(r.data + 'T00:00:00').getFullYear() < anoAtual);
+    function getParametrosHistoricosAderencia(nomeRio, anoAlvo) {
+        const dadosHist = dadosRios
+            .filter(r => r.nome === nomeRio)
+            .map(r => ({ ...r, d: new Date(r.data + 'T00:00:00') }))
+            .filter(r => !isNaN(r.d) && Number.isFinite(r.nivel) && r.d.getFullYear() < anoAlvo)
+            .sort((a, b) => a.d - b.d);
         if (dadosHist.length < 3) return null;
 
-        const buckets = Array.from({length:12}, () => []);
-        dadosHist.forEach(r => {
-            const m = new Date(r.data + 'T00:00:00').getMonth();
-            if (!isNaN(r.nivel)) buckets[m].push(r.nivel);
+        const buckets = Array.from({ length: 12 }, () => []);
+        dadosHist.forEach(r => buckets[r.d.getMonth()].push(r.nivel));
+        const mediaMes = buckets.map(arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
+        const stdMes = buckets.map((arr, i) => {
+            if (arr.length < 2) return 0;
+            const media = mediaMes[i];
+            return Math.sqrt(arr.reduce((s, v) => s + (v - media) ** 2, 0) / arr.length);
         });
-        const mediaMes = buckets.map(arr => arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : null);
+        const fallbackMedia = (() => {
+            const valid = mediaMes.filter(v => v !== null);
+            return valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : 0;
+        })();
+        const fallbackStd = (() => {
+            const valid = stdMes.filter((_, i) => mediaMes[i] !== null);
+            return valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : 0;
+        })();
 
-        const obsPorMes = Array.from({length:12}, () => []);
+        let tendencia = 0;
+        if (dadosHist.length >= 2) {
+            const n = dadosHist.length;
+            const xs = dadosHist.map((_, i) => i);
+            const ys = dadosHist.map(r => r.nivel);
+            const mx = xs.reduce((a, b) => a + b, 0) / n;
+            const my = ys.reduce((a, b) => a + b, 0) / n;
+            const num = xs.reduce((s, x, i) => s + (x - mx) * (ys[i] - my), 0);
+            const den = xs.reduce((s, x) => s + (x - mx) ** 2, 0);
+            tendencia = den === 0 ? 0 : num / den;
+        }
+
+        return {
+            mediaMes,
+            stdMes,
+            fallbackMedia,
+            fallbackStd,
+            tendencia,
+            ultimaData: dadosHist[dadosHist.length - 1]?.d || null
+        };
+    }
+
+    function calcularAderencia(nomeRio, cenario = 'medio') {
+        const anoAtual = new Date().getFullYear();
+        const dadosAtuais = dadosRios
+            .filter(r => r.nome === nomeRio)
+            .map(r => ({ ...r, d: new Date(r.data + 'T00:00:00') }))
+            .filter(r => !isNaN(r.d) && Number.isFinite(r.nivel) && r.d.getFullYear() === anoAtual);
+        if (dadosAtuais.length === 0) return null;
+
+        const params = getParametrosHistoricosAderencia(nomeRio, anoAtual);
+        if (!params) return null;
+
+        const obsPorMes = Array.from({ length: 12 }, () => []);
         dadosAtuais.forEach(r => {
-            const m = new Date(r.data + 'T00:00:00').getMonth();
-            obsPorMes[m].push(r.nivel);
+            obsPorMes[r.d.getMonth()].push(r.nivel);
         });
 
         const resultados = [];
         for (let m = 0; m < 12; m++) {
-            if (obsPorMes[m].length === 0 || mediaMes[m] === null) continue;
-            const real = obsPorMes[m].reduce((a,b)=>a+b,0)/obsPorMes[m].length;
-            const base = mediaMes[m];
-            const std = buckets[m].length > 1 ? Math.sqrt(buckets[m].reduce((s,v) => s + Math.pow(v - base, 2), 0) / buckets[m].length) : 0;
-            const proj = projetarNivelPorCenario(cenarioId, m, base, std);
+            if (obsPorMes[m].length === 0) continue;
+            const real = obsPorMes[m].reduce((a, b) => a + b, 0) / obsPorMes[m].length;
+            const base = params.mediaMes[m] !== null ? params.mediaMes[m] : params.fallbackMedia;
+            const std = params.stdMes[m] > 0 ? params.stdMes[m] : params.fallbackStd;
+            const mesesAFrente = params.ultimaData
+                ? Math.max(1, ((anoAtual - params.ultimaData.getFullYear()) * 12) + (m - params.ultimaData.getMonth()))
+                : 1;
+            const ajuste = params.tendencia * mesesAFrente;
+
+            let proj = Math.max(0, base + ajuste);
+            if (cenario === 'otimista') proj = Math.max(0, proj + std);
+            else if (cenario === 'pessimista') proj = Math.max(0, proj - std);
+            else if (cenario !== 'medio') {
+                const cenConf = (variaveis.cenariosCustom || []).find(c => c.id === cenario);
+                if (cenConf) proj = projetarNivelCenarioCustom(cenConf, m, base, std, ajuste);
+            }
+
             const erro = real - proj;
             const erroPct = proj !== 0 ? (Math.abs(erro) / Math.abs(proj)) * 100 : null;
             resultados.push({ mes: m, real, projetado: proj, erro, erroAbs: Math.abs(erro), erroPct });
@@ -2756,54 +2830,52 @@
         return resultados.length ? resultados : null;
     }
 
-    function obterMetricasAderencia(resultados) {
-        const erroMedio = resultados.reduce((s,r) => s + r.erroAbs, 0) / resultados.length;
-        const validos = resultados.filter(r => r.erroPct !== null);
-        const erroPctMedio = validos.length ? validos.reduce((s,r) => s + r.erroPct, 0) / validos.length : 0;
-        const acuracia = Math.max(0, 100 - erroPctMedio);
-        return { erroMedio, erroPctMedio, acuracia };
+    function handleAderenciaCenarioChange() {
+        aderenciaCenarioSelecionado = decodeAderenciaCenarioValue(document.getElementById('aderenciaCenarioSelect')?.value || '');
+        renderAderencia(getRioSelecionadoNoGrafico(), true);
     }
 
-    function onChangeAderenciaCenario() {
-        const sel = document.getElementById('aderenciaCenarioSelect');
-        const rioSel = document.getElementById('filtroRio')?.value;
-        if (!sel || !rioSel) return;
-        aderenciaCenarioSelecionado = sel.value;
-        renderAderencia(rioSel);
-    }
-
-    function renderAderencia(nomeRio) {
+    function renderAderencia(nomeRio, manterSelecaoUsuario = false) {
         const card = document.getElementById('cardAderencia');
         if (!card) return;
+        nomeRio = nomeRio || getRioSelecionadoNoGrafico();
         const anoAtual = new Date().getFullYear();
         document.getElementById('aderenciaAno').textContent = anoAtual;
 
-        const cenarios = listarCenariosAderencia();
-        const avaliados = cenarios
-            .map(c => {
-                const resultados = calcularAderencia(nomeRio, c.id);
-                if (!resultados) return null;
-                return { ...c, resultados, ...obterMetricasAderencia(resultados) };
-            })
-            .filter(Boolean);
-        if (!avaliados.length) { card.style.display = 'none'; return; }
+        const select = document.getElementById('aderenciaCenarioSelect');
+        const metricas = getAderenciaCenariosDisponiveis().map(cenario => {
+            const resultados = calcularAderencia(nomeRio, cenario.id);
+            if (!resultados) return null;
+            const erroMedio = resultados.reduce((s, r) => s + r.erroAbs, 0) / resultados.length;
+            const validosPct = resultados.filter(r => r.erroPct !== null);
+            const erroPctMedio = validosPct.length ? validosPct.reduce((s, r) => s + r.erroPct, 0) / validosPct.length : 100;
+            const acuracia = Math.max(0, 100 - erroPctMedio);
+            return { ...cenario, resultados, erroMedio, erroPctMedio, acuracia };
+        }).filter(Boolean);
+
+        if (!metricas.length) {
+            card.style.display = 'none';
+            if (select) select.innerHTML = '';
+            return;
+        }
         card.style.display = '';
 
-        const melhor = [...avaliados].sort((a, b) => b.acuracia - a.acuracia)[0];
-        if (!aderenciaCenarioSelecionado || !avaliados.some(c => c.id === aderenciaCenarioSelecionado)) {
-            aderenciaCenarioSelecionado = melhor.id;
-        }
-        const atual = avaliados.find(c => c.id === aderenciaCenarioSelecionado) || melhor;
-        const { resultados, erroMedio, erroPctMedio, acuracia } = atual;
+        const melhor = [...metricas].sort((a, b) => {
+            if (b.acuracia !== a.acuracia) return b.acuracia - a.acuracia;
+            if (a.erroMedio !== b.erroMedio) return a.erroMedio - b.erroMedio;
+            return String(a.nome).localeCompare(String(b.nome), 'pt-BR');
+        })[0];
+        const metricaSelecionada = manterSelecaoUsuario && metricas.some(m => m.id === aderenciaCenarioSelecionado)
+            ? metricas.find(m => m.id === aderenciaCenarioSelecionado)
+            : melhor;
+        aderenciaCenarioSelecionado = metricaSelecionada.id;
 
-        const select = document.getElementById('aderenciaCenarioSelect');
         if (select) {
-            select.innerHTML = avaliados
-                .sort((a, b) => b.acuracia - a.acuracia)
-                .map(c => `<option value="${c.id}" ${c.id === atual.id ? 'selected' : ''}>${c.nome} (${c.acuracia.toFixed(1)}%)</option>`)
-                .join('');
+            select.innerHTML = metricas.map(m => `<option value="${encodeAderenciaCenarioValue(m.id)}">${m.nome}${m.id === melhor.id ? ' • melhor acurácia' : ''}</option>`).join('');
+            select.value = encodeAderenciaCenarioValue(metricaSelecionada.id);
         }
 
+        const { resultados, erroMedio, erroPctMedio, acuracia, nome: nomeCenario } = metricaSelecionada;
         const cor = acuracia >= 85 ? 'green' : acuracia >= 70 ? 'yellow' : 'red';
         const corClasse = { green: 'text-green-600 border-green-500', yellow: 'text-yellow-600 border-yellow-500', red: 'text-red-600 border-red-500' }[cor];
         const bgClasse = { green: 'border-green-500', yellow: 'border-yellow-500', red: 'border-red-500' }[cor];
@@ -2812,7 +2884,7 @@
             <div class="card p-4 border-l-4 ${bgClasse}">
                 <p class="text-xs text-gray-500 mb-1">Acurácia Média</p>
                 <p class="text-2xl font-bold ${corClasse.split(' ')[0]}">${acuracia.toFixed(1)}%</p>
-                <p class="text-xs text-gray-400">${resultados.length} meses comparados</p>
+                <p class="text-xs text-gray-400">${nomeCenario} · ${resultados.length} meses comparados</p>
             </div>
             <div class="card p-4 border-l-4 border-gray-400">
                 <p class="text-xs text-gray-500 mb-1">Erro Absoluto Médio</p>
