@@ -1855,17 +1855,41 @@
             if (d.getFullYear() === anoAtual) obsPorMes[d.getMonth()].push(r.nivel);
         });
 
+        // Último nível registrado no mês atual (âncora da linha histórica)
+        const medicoesAtualOrdenadas = dadosRio
+            .filter(r => { const d = new Date(r.data + 'T00:00:00'); return d.getFullYear() === anoAtual && d.getMonth() === mesAtual; })
+            .sort((a, b) => new Date(a.data) - new Date(b.data));
+        const ultimoNivelMesAtual = medicoesAtualOrdenadas.length
+            ? medicoesAtualOrdenadas[medicoesAtualOrdenadas.length - 1].nivel
+            : null;
+
         for (let m = 0; m <= mesAtual; m++) {
-            if (obsPorMes[m].length) {
+            if (!obsPorMes[m].length) continue;
+
+            if (m === mesAtual) {
+                // Mês em andamento: usa último nível real como âncora histórica e projeta
+                // cenários sazonais (média histórica + tendência) para representar o mês completo
+                const base = mediaMes[m] !== null ? mediaMes[m] : fallbackMedia;
+                const std  = stdMes[m] > 0 ? stdMes[m] : fallbackStd;
+                const ajuste = tendencia;
+                projecao.historico.push(ultimoNivelMesAtual);
+                projecao.medio.push(Math.max(0, base + ajuste));
+                projecao.otimista.push(Math.max(0, base + ajuste + std));
+                projecao.pessimista.push(Math.max(0, base + ajuste - std));
+                (variaveis.cenariosCustom || []).forEach(c => {
+                    custom[c.id].push(projetarNivelCenarioCustom(c, m, base, std, ajuste));
+                });
+            } else {
+                // Mês passado completo: usa média real observada
                 const mediaObs = obsPorMes[m].reduce((a,b)=>a+b,0)/obsPorMes[m].length;
                 projecao.historico.push(mediaObs);
                 projecao.medio.push(null);
                 projecao.otimista.push(null);
                 projecao.pessimista.push(null);
                 Object.keys(custom).forEach(id => custom[id].push(null));
-                projecao.labels.push(`${MESES[m]}/${anoAtual}`);
-                projecao.mesesIdx.push(m);
             }
+            projecao.labels.push(`${MESES[m]}/${anoAtual}`);
+            projecao.mesesIdx.push(m);
         }
 
         // Projeção: todos os meses ainda não observados até dezembro
@@ -2093,16 +2117,18 @@
             return;
         }
 
-        // Conectar histórico e projeção no último ponto observado para unir as linhas
+        // Conectar histórico e projeção no último ponto observado para unir as linhas.
+        // Se o mês atual já tem projeção calculada (mês parcial), preserva esses valores
+        // para mostrar a média histórica sazonal projetada em vez da leitura parcial.
         const lastHistIdx = proj.historico.reduce((acc,v,i) => v !== null ? i : acc, -1);
         const medioDs = proj.medio.slice();
         const otimDs  = proj.otimista.slice();
         const pessDs  = proj.pessimista.slice();
         if (lastHistIdx >= 0) {
             const vH = proj.historico[lastHistIdx];
-            medioDs[lastHistIdx] = vH;
-            otimDs[lastHistIdx]  = vH;
-            pessDs[lastHistIdx]  = vH;
+            if (medioDs[lastHistIdx] === null) medioDs[lastHistIdx] = vH;
+            if (otimDs[lastHistIdx]  === null) otimDs[lastHistIdx]  = vH;
+            if (pessDs[lastHistIdx]  === null) pessDs[lastHistIdx]  = vH;
         }
 
         // Datasets base — filtrados por cenariosRioOcultos
@@ -2119,7 +2145,7 @@
         (variaveis.cenariosCustom || []).forEach(c => {
             if (cenariosRioOcultos.has(String(c.id))) return;
             const ds = (proj.custom[c.id] || []).slice();
-            if (lastHistIdx >= 0 && proj.historico[lastHistIdx] !== null) ds[lastHistIdx] = proj.historico[lastHistIdx];
+            if (lastHistIdx >= 0 && proj.historico[lastHistIdx] !== null && ds[lastHistIdx] === null) ds[lastHistIdx] = proj.historico[lastHistIdx];
             datasets.push({
                 label: c.nome,
                 data: ds,
