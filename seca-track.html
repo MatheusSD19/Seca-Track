@@ -112,6 +112,9 @@
                 <button onclick="switchTab('rotas')" id="tab-rotas" class="py-4 text-sm font-medium text-gray-500 hover:text-gray-700 whitespace-nowrap">
                     <i data-lucide="map" class="w-4 h-4 inline mr-2"></i>Rotas & Metas
                 </button>
+                <button onclick="switchTab('custovariavel')" id="tab-custovariavel" class="py-4 text-sm font-medium text-gray-500 hover:text-gray-700 whitespace-nowrap">
+                    <i data-lucide="fuel" class="w-4 h-4 inline mr-2"></i>Custo Variável
+                </button>
                 <button onclick="switchTab('dashboard')" id="tab-dashboard" class="py-4 text-sm font-medium text-gray-500 hover:text-gray-700 whitespace-nowrap">
                     <i data-lucide="bar-chart-3" class="w-4 h-4 inline mr-2"></i>Capacidade Frota
                 </button>
@@ -381,7 +384,7 @@
                                 <tr>
                                     <th>Nome</th><th>HP</th>
                                     <th>Calado Mín</th><th>Calado Máx</th>
-                                    <th>Barcaças/Comboio</th>
+                                    <th>Barcaças/Comboio</th><th>Consumos (L/H)</th>
                                     <th>Ações</th>
                                 </tr>
                             </thead>
@@ -389,6 +392,42 @@
                         </table>
                     </div>
                 </div>
+            </div>
+        </div>
+
+
+        <div id="content-custovariavel" class="tab-content hidden">
+            <div class="grid-2 mb-6">
+                <div class="card p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-lg font-semibold flex items-center gap-2"><i data-lucide="droplets" class="w-5 h-5 text-blue-600"></i>Cadastro de Consumo</h2>
+                        <button onclick="openModal('consumo')" class="btn-primary text-sm">Novo Consumo</button>
+                    </div>
+                    <div class="table-container"><table><thead><tr><th>Item</th><th>Preço (R$/L)</th><th>Ações</th></tr></thead><tbody id="tbodyConsumos"></tbody></table></div>
+                </div>
+                <div class="card p-6">
+                    <h2 class="text-lg font-semibold mb-4">Lançamento Mensal de Consumo</h2>
+                    <div class="grid-3">
+                        <div><label class="block text-sm mb-1">Mês</label><select id="cvMes" class="input-field"></select></div>
+                        <div><label class="block text-sm mb-1">Ano</label><input id="cvAno" type="number" class="input-field" value="2026"></div>
+                        <div><label class="block text-sm mb-1">Rota</label><select id="cvRota" class="input-field"></select></div>
+                    </div>
+                    <div class="grid-3 mt-3">
+                        <div><label class="block text-sm mb-1">Empurrador</label><select id="cvEmpurrador" class="input-field"></select></div>
+                        <div><label class="block text-sm mb-1">Consumo</label><select id="cvConsumo" class="input-field"></select></div>
+                        <div><label class="block text-sm mb-1">Litros</label><input id="cvLitros" type="number" class="input-field" step="0.01"></div>
+                    </div>
+                    <div class="grid-2 mt-3">
+                        <div><label class="block text-sm mb-1">Horas de viagem</label><input id="cvHoras" type="number" class="input-field" step="0.01"></div>
+                        <div><label class="block text-sm mb-1">Toneladas transportadas</label><input id="cvToneladas" type="number" class="input-field" step="0.01"></div>
+                    </div>
+                    <button onclick="saveRegistroConsumo()" class="btn-primary mt-4">Salvar Lançamento</button>
+                </div>
+            </div>
+            <div class="card p-6">
+                <h2 class="text-lg font-semibold mb-4">Consumo Médio Mensal (Custo Variável)</h2>
+                <div class="chart-container" style="height:360px"><canvas id="chartCustoVariavel"></canvas></div>
+                <div class="table-container mt-4"><table><thead><tr><th>Mês/Ano</th><th>Rota</th><th>Litros Totais</th><th>Litros/Ton</th><th>R$/Ton</th></tr></thead><tbody id="tbodyConsumoRota"></tbody></table></div>
             </div>
         </div>
 
@@ -690,6 +729,13 @@
                         <input type="number" id="empurradorCaladoMin" class="input-field" step="0.01" placeholder="Ex: 1,80"></div>
                     <div><label class="block text-sm font-medium text-gray-700 mb-1">Calado Máximo (m)</label>
                         <input type="number" id="empurradorCaladoMax" class="input-field" step="0.01" placeholder="Opcional"></div>
+                </div>
+                <div class="border rounded p-3">
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="block text-sm font-medium text-gray-700">Consumo Médio em Viagem (L/H)</label>
+                        <button type="button" onclick="addEmpurradorConsumoRow()" class="text-sm text-blue-600 hover:text-blue-800">+ Adicionar</button>
+                    </div>
+                    <div id="empurradorConsumosRows" class="space-y-2"></div>
                 </div>
                 <div class="flex gap-3 pt-4">
                     <button onclick="saveEmpurrador()" class="btn-primary flex-1">Salvar</button>
@@ -1020,6 +1066,15 @@
         </div>
     </div>
 
+
+    <div id="modalConsumo" class="modal">
+        <div class="modal-content p-6">
+            <div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold" id="tituloConsumo">Novo Consumo</h3><button onclick="closeModal('consumo')" class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-5 h-5"></i></button></div>
+            <input type="hidden" id="consumoId">
+            <div class="space-y-3"><div><label class="block text-sm mb-1">Nome</label><input id="consumoNome" class="input-field"></div><div><label class="block text-sm mb-1">Preço (R$/L)</label><input id="consumoPreco" type="number" step="0.01" class="input-field"></div><button onclick="saveConsumo()" class="btn-primary w-full">Salvar</button></div>
+        </div>
+    </div>
+
     <script>
     // ==============================================================================
     // SECA TRACK — Sistema de Previsão Operacional de Rios
@@ -1060,6 +1115,9 @@
     let tpCenariosHidden = new Set(); // scenario IDs hidden in Tempo de Parada
     let _pulmaoCache = []; // cache de dados de pulmão para o modal de detalhes
     let chartTempoParada = null;
+    let consumos = [];
+    let registrosConsumo = [];
+    let chartCustoVariavel = null;
 
     // File System Access
     let dbDirHandle = null;      // DirectoryHandle escolhido pelo usuário
@@ -1152,7 +1210,7 @@
             dashViewMode
         };
         return {
-            dadosRios, empurradores, barcacas, rotas, cidadesDemanda, cenariosRotas, variaveis,
+            dadosRios, empurradores, barcacas, rotas, cidadesDemanda, cenariosRotas, variaveis, consumos, registrosConsumo,
             uiFiltros,
             exportDate: new Date().toISOString(),
             version: '2.0'
@@ -1168,6 +1226,11 @@
         rotas        = data.rotas || [];
         cidadesDemanda = data.cidadesDemanda || [];
         cenariosRotas  = data.cenariosRotas || [];
+        consumos = data.consumos || [
+            {id: 1, nome: 'Óleo Diesel Marítimo', preco: 6.19},
+            {id: 2, nome: 'Óleo Combustível Pesado', preco: 4.88}
+        ];
+        registrosConsumo = data.registrosConsumo || [];
         variaveis    = Object.assign({
             abaco: 1.03, faq: 0.50, anosProjecao: 3,
             cenarios: { otimista:{abaco:null,faq:null}, medio:{abaco:null,faq:null}, pessimista:{abaco:null,faq:null} },
@@ -1411,6 +1474,7 @@
         renderTabelaRios();
         renderTabelaBarcacas();
         renderTabelaEmpurradores();
+        updateCustoVariavel();
         renderTabelaRotas();
         renderTabelaCidadesDemanda();
         renderTabelaCenariosRota();
@@ -2673,9 +2737,14 @@
                 document.getElementById('empurradorCaladoMin').value   = e.caladoMin;
                 document.getElementById('empurradorCaladoMax').value   = e.caladoMax ?? '';
                 document.getElementById('empurradorBarcacas').value    = e.qtdBarcacas ?? 4;
+                document.getElementById('empurradorConsumosRows').innerHTML='';
+                (e.consumos || []).forEach(addEmpurradorConsumoRow);
+                if (!(e.consumos||[]).length) addEmpurradorConsumoRow();
             } else {
                 ['empurradorNome','empurradorPotencia','empurradorCaladoMin','empurradorCaladoMax'].forEach(k => document.getElementById(k).value = '');
                 document.getElementById('empurradorBarcacas').value = 4;
+                document.getElementById('empurradorConsumosRows').innerHTML='';
+                addEmpurradorConsumoRow();
             }
             document.getElementById('modalEmpurrador').classList.add('active');
 
@@ -2753,6 +2822,13 @@
             `).join('') || '<p class="text-xs text-gray-400">Cadastre ao menos uma rota antes de criar cenários.</p>';
             document.getElementById('modalCenarioRota').classList.add('active');
 
+        } else if (tipo === 'consumo') {
+            const c = id ? consumos.find(x => x.id === id) : null;
+            document.getElementById('tituloConsumo').textContent = id ? 'Editar Consumo' : 'Novo Consumo';
+            document.getElementById('consumoId').value = id || '';
+            document.getElementById('consumoNome').value = c?.nome || '';
+            document.getElementById('consumoPreco').value = c?.preco ?? '';
+            document.getElementById('modalConsumo').classList.add('active');
         } else if (tipo === 'cenarios') {
             const c = variaveis.cenarios;
             document.getElementById('cenOtimistaAbaco').value    = c.otimista.abaco ?? '';
@@ -2800,6 +2876,18 @@
         closeModal('barcaca');
     }
 
+    function addEmpurradorConsumoRow(item={consumoId:'', litrosHora:''}) {
+        const c=document.getElementById('empurradorConsumosRows'); if(!c) return;
+        const row=document.createElement('div'); row.className='grid-2';
+        row.innerHTML=`<select class="input-field emp-consumo-id"><option value="">Consumo...</option>${consumos.map(x=>`<option value="${x.id}" ${String(item.consumoId)===String(x.id)?'selected':''}>${x.nome}</option>`).join('')}</select><input type="number" class="input-field emp-consumo-lh" step="0.01" placeholder="L/H" value="${item.litrosHora??''}">`;
+        c.appendChild(row);
+    }
+    function getEmpurradorConsumosFromInputs(){
+        const ids=[...document.querySelectorAll('#empurradorConsumosRows .emp-consumo-id')];
+        const lhs=[...document.querySelectorAll('#empurradorConsumosRows .emp-consumo-lh')];
+        return ids.map((el,i)=>({consumoId:parseFloat(el.value),litrosHora:parseFloat(lhs[i].value)})).filter(x=>x.consumoId&&!isNaN(x.litrosHora)&&x.litrosHora>0);
+    }
+
     function saveEmpurrador() {
         const id = document.getElementById('empurradorId').value;
         const nome        = document.getElementById('empurradorNome').value.trim();
@@ -2812,7 +2900,8 @@
         if (!nome || isNaN(caladoMin) || qtdBarcacas <= 0) { alert('Nome, calado mínimo e qtd de barcaças são obrigatórios.'); return; }
 
         const existingEmp = id ? empurradores.find(x => x.id == parseFloat(id)) : null;
-        const emp = { id: id ? parseFloat(id) : Date.now() + Math.random(), nome, potencia, caladoMin, caladoMax, qtdBarcacas, ativo: existingEmp ? (existingEmp.ativo ?? true) : true };
+        const consumosEmp = getEmpurradorConsumosFromInputs();
+        const emp = { id: id ? parseFloat(id) : Date.now() + Math.random(), nome, potencia, caladoMin, caladoMax, qtdBarcacas, consumos: consumosEmp, ativo: existingEmp ? (existingEmp.ativo ?? true) : true };
         if (id) {
             const i = empurradores.findIndex(x => x.id == id);
             empurradores[i] = emp;
@@ -2920,7 +3009,7 @@
         const tbody = document.getElementById('tbodyEmpurradores');
         tbody.innerHTML = '';
         if (empurradores.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-gray-400 py-4">Nenhum empurrador cadastrado</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-gray-400 py-4">Nenhum empurrador cadastrado</td></tr>';
             return;
         }
         empurradores.forEach(e => {
@@ -2935,7 +3024,7 @@
                 <td>${e.potencia ? e.potencia + ' HP' : '-'}</td>
                 <td>${e.caladoMin.toFixed(2)} m</td>
                 <td>${e.caladoMax ? e.caladoMax.toFixed(2)+' m' : '-'}</td>
-                <td>${e.qtdBarcacas}</td>
+                <td>${e.qtdBarcacas}</td><td>${(e.consumos||[]).map(c=>`${consumos.find(x=>x.id===c.consumoId)?.nome||"?"}: ${c.litrosHora} L/H`).join("<br>") || "-"}</td>
                 <td class="flex gap-2 items-center">
                     <button onclick="toggleAtivoEmpurrador(${e.id})" title="${ativo ? 'Desativar' : 'Ativar'}"
                         class="${ativo ? 'text-green-600 hover:text-green-800' : 'text-gray-400 hover:text-green-600'}">
@@ -2949,6 +3038,30 @@
         lucide.createIcons();
     }
 
+
+    function saveConsumo(){
+        const id=document.getElementById('consumoId').value; const nome=document.getElementById('consumoNome').value.trim(); const preco=parseFloat(document.getElementById('consumoPreco').value);
+        if(!nome||isNaN(preco)){alert('Preencha nome e preço.');return;}
+        const item={id:id?parseFloat(id):Date.now()+Math.random(),nome,preco};
+        if(id){consumos[consumos.findIndex(x=>x.id==id)]=item;} else consumos.push(item);
+        saveToLocalStorage(); renderTabelaConsumos(); closeModal('consumo');
+    }
+    function renderTabelaConsumos(){const tb=document.getElementById('tbodyConsumos'); if(!tb) return; tb.innerHTML=consumos.map(c=>`<tr><td>${c.nome}</td><td>${c.preco.toFixed(2)}</td><td><button onclick="openModal('consumo', ${c.id})" class="text-blue-600">Editar</button></td></tr>`).join('')||'<tr><td colspan="3" class="text-center text-gray-400 py-3">Nenhum consumo cadastrado</td></tr>';
+        const sc=document.getElementById('cvConsumo'); if(sc) sc.innerHTML=consumos.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
+    }
+    function saveRegistroConsumo(){
+        const r={id:Date.now()+Math.random(),mes:parseInt(document.getElementById('cvMes').value),ano:parseInt(document.getElementById('cvAno').value),rotaId:parseFloat(document.getElementById('cvRota').value),empurradorId:parseFloat(document.getElementById('cvEmpurrador').value),consumoId:parseFloat(document.getElementById('cvConsumo').value),litros:parseFloat(document.getElementById('cvLitros').value)||0,horas:parseFloat(document.getElementById('cvHoras').value)||0,toneladas:parseFloat(document.getElementById('cvToneladas').value)||0};
+        if(!r.rotaId||!r.empurradorId||!r.consumoId){alert('Preencha rota, empurrador e consumo.');return;}
+        registrosConsumo.push(r); saveToLocalStorage(); updateCustoVariavel();
+    }
+    function updateCustoVariavel(){
+        renderTabelaConsumos(); const sr=document.getElementById('cvRota'); if(sr) sr.innerHTML='<option value="">Selecione...</option>'+rotas.map(r=>`<option value="${r.id}">${r.nome}</option>`).join('');
+        const se=document.getElementById('cvEmpurrador'); if(se) se.innerHTML='<option value="">Selecione...</option>'+empurradores.map(e=>`<option value="${e.id}">${e.nome}</option>`).join('');
+        const sm=document.getElementById('cvMes'); if(sm&&!sm.options.length) sm.innerHTML=MESES.map((m,i)=>`<option value="${i}">${m}</option>`).join('');
+        const tbody=document.getElementById('tbodyConsumoRota'); if(!tbody) return;
+        const map={}; registrosConsumo.forEach(x=>{const k=`${x.ano}-${x.mes}-${x.rotaId}`; (map[k]??={litros:0,ton:0,reais:0,ano:x.ano,mes:x.mes,rotaId:x.rotaId}); const c=consumos.find(i=>i.id===x.consumoId); map[k].litros+=x.litros; map[k].ton+=x.toneladas; map[k].reais+=x.litros*((c?.preco)||0);});
+        const rows=Object.values(map); tbody.innerHTML=rows.map(r=>{const rota=rotas.find(x=>x.id===r.rotaId); const lpt=r.ton? r.litros/r.ton:0; const rpt=r.ton? r.reais/r.ton:0; return `<tr><td>${MESES[r.mes]}/${r.ano}</td><td>${rota?.nome||'-'}</td><td>${r.litros.toFixed(2)}</td><td>${lpt.toFixed(3)}</td><td>${rpt.toFixed(2)}</td></tr>`;}).join('')||'<tr><td colspan="5" class="text-center text-gray-400 py-3">Sem lançamentos</td></tr>';
+    }
     // ==========================================================================
     // MÓDULO 3: ROTAS
     // ==========================================================================
