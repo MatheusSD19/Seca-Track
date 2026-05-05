@@ -112,11 +112,11 @@
                 <button onclick="switchTab('rotas')" id="tab-rotas" class="py-4 text-sm font-medium text-gray-500 hover:text-gray-700 whitespace-nowrap">
                     <i data-lucide="map" class="w-4 h-4 inline mr-2"></i>Rotas & Metas
                 </button>
-                <button onclick="switchTab('custovariavel')" id="tab-custovariavel" class="py-4 text-sm font-medium text-gray-500 hover:text-gray-700 whitespace-nowrap">
-                    <i data-lucide="fuel" class="w-4 h-4 inline mr-2"></i>Custo Variável
-                </button>
                 <button onclick="switchTab('dashboard')" id="tab-dashboard" class="py-4 text-sm font-medium text-gray-500 hover:text-gray-700 whitespace-nowrap">
                     <i data-lucide="bar-chart-3" class="w-4 h-4 inline mr-2"></i>Capacidade Frota
+                </button>
+                <button onclick="switchTab('custovariavel')" id="tab-custovariavel" class="py-4 text-sm font-medium text-gray-500 hover:text-gray-700 whitespace-nowrap">
+                    <i data-lucide="fuel" class="w-4 h-4 inline mr-2"></i>Custo Variável
                 </button>
             </nav>
         </div>
@@ -344,7 +344,7 @@
 
         <!-- MÓDULO 2: ATIVOS -->
         <div id="content-ativos" class="tab-content hidden">
-            <div class="grid-2">
+            <div class="grid-2 mb-6">
                 <div class="card p-6">
                     <div class="flex justify-between items-center mb-4">
                         <h2 class="text-lg font-semibold flex items-center gap-2">
@@ -393,41 +393,82 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Tipos de Combustível / Consumo -->
+            <div class="card p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-semibold flex items-center gap-2">
+                        <i data-lucide="droplets" class="w-5 h-5 text-blue-600"></i> Tipos de Combustível
+                    </h2>
+                    <button onclick="openModal('consumo')" class="btn-primary text-sm flex items-center gap-1">
+                        <i data-lucide="plus" class="w-4 h-4"></i> Novo
+                    </button>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead><tr><th>Item</th><th>Preço (R$/L)</th><th>Ações</th></tr></thead>
+                        <tbody id="tbodyConsumos"></tbody>
+                    </table>
+                </div>
+                <p class="text-xs text-gray-500 mt-3">Cadastre os tipos de combustível utilizados pelos empurradores. O preço é usado no cálculo automático de Custo Variável.</p>
+            </div>
         </div>
 
 
         <div id="content-custovariavel" class="tab-content hidden">
-            <div class="grid-2 mb-6">
-                <div class="card p-6">
-                    <div class="flex justify-between items-center mb-4">
-                        <h2 class="text-lg font-semibold flex items-center gap-2"><i data-lucide="droplets" class="w-5 h-5 text-blue-600"></i>Cadastro de Consumo</h2>
-                        <button onclick="openModal('consumo')" class="btn-primary text-sm">Novo Consumo</button>
+            <!-- Filtros -->
+            <div class="card p-4 mb-6">
+                <div class="flex gap-4 items-end flex-wrap">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Ano</label>
+                        <input id="cvAno" type="number" class="input-field" value="2026" style="width:6rem" onchange="updateCustoVariavel()">
                     </div>
-                    <div class="table-container"><table><thead><tr><th>Item</th><th>Preço (R$/L)</th><th>Ações</th></tr></thead><tbody id="tbodyConsumos"></tbody></table></div>
-                </div>
-                <div class="card p-6">
-                    <h2 class="text-lg font-semibold mb-4">Lançamento Mensal de Consumo</h2>
-                    <div class="grid-3">
-                        <div><label class="block text-sm mb-1">Mês</label><select id="cvMes" class="input-field"></select></div>
-                        <div><label class="block text-sm mb-1">Ano</label><input id="cvAno" type="number" class="input-field" value="2026"></div>
-                        <div><label class="block text-sm mb-1">Rota</label><select id="cvRota" class="input-field"></select></div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Cenário de Nível do Rio</label>
+                        <select id="cvCenarioNivel" class="input-field" onchange="updateCustoVariavel()">
+                            <option value="medio">Médio</option>
+                            <option value="otimista">Otimista</option>
+                            <option value="pessimista">Pessimista</option>
+                        </select>
                     </div>
-                    <div class="grid-3 mt-3">
-                        <div><label class="block text-sm mb-1">Empurrador</label><select id="cvEmpurrador" class="input-field"></select></div>
-                        <div><label class="block text-sm mb-1">Consumo</label><select id="cvConsumo" class="input-field"></select></div>
-                        <div><label class="block text-sm mb-1">Litros</label><input id="cvLitros" type="number" class="input-field" step="0.01"></div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Cenário de Rotas</label>
+                        <select id="cvCenarioRota" class="input-field" onchange="updateCustoVariavel()">
+                            <option value="">Todas as Rotas</option>
+                        </select>
                     </div>
-                    <div class="grid-2 mt-3">
-                        <div><label class="block text-sm mb-1">Horas de viagem</label><input id="cvHoras" type="number" class="input-field" step="0.01"></div>
-                        <div><label class="block text-sm mb-1">Toneladas transportadas</label><input id="cvToneladas" type="number" class="input-field" step="0.01"></div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Visualização</label>
+                        <div class="flex rounded overflow-hidden border border-gray-300">
+                            <button id="cvBtnLitros"    onclick="setCVChartMode('litros')"    class="text-xs px-3 py-1.5 font-medium bg-blue-600 text-white transition-colors">Litros Totais</button>
+                            <button id="cvBtnLitrosTon" onclick="setCVChartMode('litrosTon')" class="text-xs px-3 py-1.5 font-medium bg-white text-gray-600 transition-colors">L/Ton</button>
+                            <button id="cvBtnReaisTon"  onclick="setCVChartMode('reaisTon')"  class="text-xs px-3 py-1.5 font-medium bg-white text-gray-600 transition-colors">R$/Ton</button>
+                        </div>
                     </div>
-                    <button onclick="saveRegistroConsumo()" class="btn-primary mt-4">Salvar Lançamento</button>
                 </div>
             </div>
-            <div class="card p-6">
-                <h2 class="text-lg font-semibold mb-4">Consumo Médio Mensal (Custo Variável)</h2>
+
+            <!-- Gráfico -->
+            <div class="card p-6 mb-6">
+                <h2 class="text-lg font-semibold mb-1 flex items-center gap-2">
+                    <i data-lucide="bar-chart-2" class="w-5 h-5 text-blue-600"></i>
+                    <span id="cvChartTitle">Consumo Médio Mensal — Litros Totais</span>
+                </h2>
+                <p class="text-xs text-gray-500 mb-4">Calculado automaticamente com base nas viagens previstas por cenário × consumo (L/H) × horas de viagem dos empurradores.</p>
                 <div class="chart-container" style="height:360px"><canvas id="chartCustoVariavel"></canvas></div>
-                <div class="table-container mt-4"><table><thead><tr><th>Mês/Ano</th><th>Rota</th><th>Litros Totais</th><th>Litros/Ton</th><th>R$/Ton</th></tr></thead><tbody id="tbodyConsumoRota"></tbody></table></div>
+            </div>
+
+            <!-- Tabela por rota -->
+            <div class="card p-6">
+                <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <i data-lucide="table-2" class="w-5 h-5 text-blue-600"></i> Consumo por Rota
+                </h2>
+                <div class="table-container">
+                    <table>
+                        <thead><tr><th>Mês</th><th>Rota</th><th>Empurrador</th><th>Combustível</th><th>Viagens</th><th>Horas Viagem</th><th>Litros Totais</th><th>Toneladas</th><th>L/Ton</th><th>R$/Ton</th></tr></thead>
+                        <tbody id="tbodyConsumoRota"></tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
@@ -1466,8 +1507,9 @@
         document.getElementById(`tab-${tab}`).classList.add('tab-active');
         document.getElementById(`tab-${tab}`).classList.remove('text-gray-500');
 
-        if (tab === 'dashboard') updateDashboard();
-        if (tab === 'rios')      updateRioChart();
+        if (tab === 'dashboard')      updateDashboard();
+        if (tab === 'rios')           updateRioChart();
+        if (tab === 'custovariavel')  updateCustoVariavel();
     }
 
     function updateAllViews() {
@@ -3046,21 +3088,154 @@
         if(id){consumos[consumos.findIndex(x=>x.id==id)]=item;} else consumos.push(item);
         saveToLocalStorage(); renderTabelaConsumos(); closeModal('consumo');
     }
-    function renderTabelaConsumos(){const tb=document.getElementById('tbodyConsumos'); if(!tb) return; tb.innerHTML=consumos.map(c=>`<tr><td>${c.nome}</td><td>${c.preco.toFixed(2)}</td><td><button onclick="openModal('consumo', ${c.id})" class="text-blue-600">Editar</button></td></tr>`).join('')||'<tr><td colspan="3" class="text-center text-gray-400 py-3">Nenhum consumo cadastrado</td></tr>';
-        const sc=document.getElementById('cvConsumo'); if(sc) sc.innerHTML=consumos.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
+    function renderTabelaConsumos(){
+        const tb=document.getElementById('tbodyConsumos'); if(!tb) return;
+        tb.innerHTML=consumos.map(c=>`<tr><td>${c.nome}</td><td>R$ ${c.preco.toFixed(2)}</td><td class="flex gap-2"><button onclick="openModal('consumo', ${c.id})" class="text-blue-600 hover:text-blue-800"><i data-lucide="edit" class="w-4 h-4"></i></button><button onclick="deleteConsumo(${c.id})" class="text-red-600 hover:text-red-800"><i data-lucide="trash-2" class="w-4 h-4"></i></button></td></tr>`).join('')||'<tr><td colspan="3" class="text-center text-gray-400 py-3">Nenhum combustível cadastrado</td></tr>';
+        lucide.createIcons();
     }
-    function saveRegistroConsumo(){
-        const r={id:Date.now()+Math.random(),mes:parseInt(document.getElementById('cvMes').value),ano:parseInt(document.getElementById('cvAno').value),rotaId:parseFloat(document.getElementById('cvRota').value),empurradorId:parseFloat(document.getElementById('cvEmpurrador').value),consumoId:parseFloat(document.getElementById('cvConsumo').value),litros:parseFloat(document.getElementById('cvLitros').value)||0,horas:parseFloat(document.getElementById('cvHoras').value)||0,toneladas:parseFloat(document.getElementById('cvToneladas').value)||0};
-        if(!r.rotaId||!r.empurradorId||!r.consumoId){alert('Preencha rota, empurrador e consumo.');return;}
-        registrosConsumo.push(r); saveToLocalStorage(); updateCustoVariavel();
+    function deleteConsumo(id){
+        if(!confirm('Excluir este item de consumo?')) return;
+        consumos=consumos.filter(c=>c.id!==id);
+        saveToLocalStorage(); renderTabelaConsumos(); updateCustoVariavel();
     }
-    function updateCustoVariavel(){
-        renderTabelaConsumos(); const sr=document.getElementById('cvRota'); if(sr) sr.innerHTML='<option value="">Selecione...</option>'+rotas.map(r=>`<option value="${r.id}">${r.nome}</option>`).join('');
-        const se=document.getElementById('cvEmpurrador'); if(se) se.innerHTML='<option value="">Selecione...</option>'+empurradores.map(e=>`<option value="${e.id}">${e.nome}</option>`).join('');
-        const sm=document.getElementById('cvMes'); if(sm&&!sm.options.length) sm.innerHTML=MESES.map((m,i)=>`<option value="${i}">${m}</option>`).join('');
-        const tbody=document.getElementById('tbodyConsumoRota'); if(!tbody) return;
-        const map={}; registrosConsumo.forEach(x=>{const k=`${x.ano}-${x.mes}-${x.rotaId}`; (map[k]??={litros:0,ton:0,reais:0,ano:x.ano,mes:x.mes,rotaId:x.rotaId}); const c=consumos.find(i=>i.id===x.consumoId); map[k].litros+=x.litros; map[k].ton+=x.toneladas; map[k].reais+=x.litros*((c?.preco)||0);});
-        const rows=Object.values(map); tbody.innerHTML=rows.map(r=>{const rota=rotas.find(x=>x.id===r.rotaId); const lpt=r.ton? r.litros/r.ton:0; const rpt=r.ton? r.reais/r.ton:0; return `<tr><td>${MESES[r.mes]}/${r.ano}</td><td>${rota?.nome||'-'}</td><td>${r.litros.toFixed(2)}</td><td>${lpt.toFixed(3)}</td><td>${rpt.toFixed(2)}</td></tr>`;}).join('')||'<tr><td colspan="5" class="text-center text-gray-400 py-3">Sem lançamentos</td></tr>';
+
+    // ── Custo Variável – cálculo automático ─────────────────────────────────
+    let _cvChartMode = 'litros'; // 'litros' | 'litrosTon' | 'reaisTon'
+
+    function setCVChartMode(mode) {
+        _cvChartMode = mode;
+        const btns = { litros:'cvBtnLitros', litrosTon:'cvBtnLitrosTon', reaisTon:'cvBtnReaisTon' };
+        Object.entries(btns).forEach(([k,id])=>{
+            const el=document.getElementById(id); if(!el) return;
+            el.className = `text-xs px-3 py-1.5 font-medium transition-colors ${k===mode?'bg-blue-600 text-white':'bg-white text-gray-600'}`;
+        });
+        const titles={litros:'Consumo Médio Mensal — Litros Totais',litrosTon:'Consumo Médio Mensal — Litros por Tonelada (L/ton)',reaisTon:'Consumo Médio Mensal — Custo por Tonelada (R$/ton)'};
+        const t=document.getElementById('cvChartTitle'); if(t) t.textContent=titles[mode]||'';
+        renderChartCustoVariavel();
+    }
+
+    // Calcula consumo automático para o ano/cenário/cenárioRota selecionados.
+    // Retorna: { byMonth: [{ mes, rota, empurrador, combustivel, viagens, horas, litros, tons, reais }] }
+    function calcularConsumoAutomatico(ano, cenarioNivel, cenarioRotaId) {
+        const rotasAtivas = cenarioRotaId
+            ? (cenariosRotas.find(c=>c.id===parseFloat(cenarioRotaId))?.rotasIds||[]).map(rid=>rotas.find(r=>r.id===rid)).filter(Boolean)
+            : rotas;
+
+        const rows = [];
+        for (let mes = 0; mes < 12; mes++) {
+            rotasAtivas.forEach(rota => {
+                if (!rotaAtivaNoMes(rota, mes)) return;
+                const nivelRio = getNivelRioCenarioAnoMes(rota.rio, ano, mes, cenarioNivel);
+                if (nivelRio === null || nivelRio === undefined) return;
+
+                (rota.empurradores||[]).forEach(empItem => {
+                    const res = calcularViagensEmpurrador(rota, empItem, mes, ano, nivelRio, cenarioNivel);
+                    if (!res || res.viagens <= 0) return;
+                    const emp = empurradores.find(e=>e.id===empItem.empurradorId);
+                    if (!emp) return;
+                    const horas = res.viagens * (parseFloat(rota.tempoViagem)||0);
+                    const tons  = res.volumeTotal;
+
+                    (emp.consumos||[]).forEach(ec => {
+                        const comb = consumos.find(c=>c.id===ec.consumoId);
+                        if (!comb) return;
+                        const litros = horas * (ec.litrosHora||0);
+                        const reais  = litros * (comb.preco||0);
+                        rows.push({ mes, rota, emp, comb, viagens: res.viagens, horas, litros, tons, reais });
+                    });
+                });
+            });
+        }
+        return rows;
+    }
+
+    function updateCustoVariavel() {
+        renderTabelaConsumos();
+
+        // Popula select de cenário de rota
+        const scr = document.getElementById('cvCenarioRota');
+        if (scr) {
+            const prev = scr.value;
+            scr.innerHTML = '<option value="">Todas as Rotas</option>' +
+                cenariosRotas.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
+            if ([...scr.options].some(o=>o.value===prev)) scr.value=prev;
+        }
+
+        const ano = parseInt(document.getElementById('cvAno')?.value) || new Date().getFullYear();
+        const cenarioNivel = document.getElementById('cvCenarioNivel')?.value || 'medio';
+        const cenarioRotaId = document.getElementById('cvCenarioRota')?.value || '';
+
+        const rows = calcularConsumoAutomatico(ano, cenarioNivel, cenarioRotaId);
+
+        // Tabela detalhada
+        const tbody = document.getElementById('tbodyConsumoRota'); if(!tbody) return;
+        if (rows.length === 0) {
+            tbody.innerHTML='<tr><td colspan="10" class="text-center text-gray-400 py-4">Sem dados — cadastre rotas com empurradores que possuam consumo configurado.</td></tr>';
+        } else {
+            tbody.innerHTML = rows.map(r => {
+                const lpt = r.tons>0 ? r.litros/r.tons : 0;
+                const rpt = r.tons>0 ? r.reais/r.tons  : 0;
+                return `<tr>
+                    <td>${MESES[r.mes]}</td>
+                    <td>${r.rota.nome}</td>
+                    <td>${r.emp.nome}</td>
+                    <td>${r.comb.nome}</td>
+                    <td>${r.viagens.toFixed(1)}</td>
+                    <td>${r.horas.toFixed(1)}</td>
+                    <td>${r.litros.toLocaleString('pt-BR',{maximumFractionDigits:0})}</td>
+                    <td>${r.tons.toLocaleString('pt-BR',{maximumFractionDigits:0})}</td>
+                    <td>${lpt.toFixed(3)}</td>
+                    <td>${rpt.toFixed(2)}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        renderChartCustoVariavel(rows);
+    }
+
+    function renderChartCustoVariavel(rows) {
+        rows = rows || calcularConsumoAutomatico(
+            parseInt(document.getElementById('cvAno')?.value)||new Date().getFullYear(),
+            document.getElementById('cvCenarioNivel')?.value||'medio',
+            document.getElementById('cvCenarioRota')?.value||''
+        );
+
+        // Agrega por mês × combustível
+        const combIds = [...new Set(rows.map(r=>r.comb.id))];
+        const CHART_COLORS = ['#3b82f6','#f59e0b','#10b981','#ef4444','#8b5cf6','#f97316','#06b6d4','#ec4899'];
+
+        const datasets = combIds.map((cid, idx) => {
+            const comb = consumos.find(c=>c.id===cid);
+            const data = MESES.map((_,mes) => {
+                const subset = rows.filter(r=>r.comb.id===cid && r.mes===mes);
+                if (subset.length===0) return 0;
+                const litros = subset.reduce((s,r)=>s+r.litros,0);
+                const tons   = subset.reduce((s,r)=>s+r.tons,0);
+                const reais  = subset.reduce((s,r)=>s+r.reais,0);
+                if (_cvChartMode==='litros')    return Math.round(litros);
+                if (_cvChartMode==='litrosTon') return tons>0 ? parseFloat((litros/tons).toFixed(3)) : 0;
+                if (_cvChartMode==='reaisTon')  return tons>0 ? parseFloat((reais/tons).toFixed(2))  : 0;
+                return 0;
+            });
+            return { label: comb?.nome||'?', data, backgroundColor: CHART_COLORS[idx%CHART_COLORS.length], borderColor: CHART_COLORS[idx%CHART_COLORS.length], borderWidth:2, fill:false, tension:0.3 };
+        });
+
+        const canvas = document.getElementById('chartCustoVariavel'); if(!canvas) return;
+        if (chartCustoVariavel) { chartCustoVariavel.destroy(); chartCustoVariavel=null; }
+
+        const yLabel = { litros:'Litros', litrosTon:'L/ton', reaisTon:'R$/ton' }[_cvChartMode]||'';
+        chartCustoVariavel = new Chart(canvas, {
+            type: 'line',
+            data: { labels: MESES, datasets },
+            options: {
+                responsive:true, maintainAspectRatio:false,
+                plugins: { legend:{ position:'bottom' } },
+                scales: {
+                    x: { grid:{ color:'rgba(0,0,0,0.05)' } },
+                    y: { title:{ display:true, text:yLabel }, ticks:{ callback: v=>Number(v).toLocaleString('pt-BR') }, beginAtZero:true }
+                }
+            }
+        });
     }
     // ==========================================================================
     // MÓDULO 3: ROTAS
