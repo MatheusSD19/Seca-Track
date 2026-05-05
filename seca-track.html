@@ -3133,7 +3133,7 @@
                     if (!res || res.viagens <= 0) return;
                     const emp = empurradores.find(e=>e.id===empItem.empurradorId);
                     if (!emp) return;
-                    const horas = res.viagens * (parseFloat(rota.tempoViagem)||0);
+                    const horas = res.viagens * (parseFloat(rota.tempoViagemH)||0);
                     const tons  = res.volumeTotal;
 
                     (emp.consumos||[]).forEach(ec => {
