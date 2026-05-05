@@ -489,12 +489,22 @@
 
             <!-- Tabela por rota -->
             <div class="card p-6">
-                <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
-                    <i data-lucide="table-2" class="w-5 h-5 text-blue-600"></i> Consumo por Rota
-                </h2>
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-semibold flex items-center gap-2">
+                        <i data-lucide="table-2" class="w-5 h-5 text-blue-600"></i> Consumo por Rota
+                    </h2>
+                    <span class="text-xs text-gray-400">Clique em um mês para ver o detalhamento por rota e empurrador</span>
+                </div>
                 <div class="table-container">
-                    <table>
-                        <thead><tr><th>Mês</th><th>Rota</th><th>Empurrador</th><th>Combustível</th><th>Viagens</th><th>Horas Viagem</th><th>Litros Totais</th><th>Toneladas</th><th>L/Ton</th><th>R$/Ton</th></tr></thead>
+                    <table id="tabelaConsumoRota">
+                        <thead><tr>
+                            <th style="width:2rem"></th>
+                            <th>Mês</th>
+                            <th>Litros Totais</th>
+                            <th>Toneladas</th>
+                            <th>L/Ton</th>
+                            <th>R$/Ton</th>
+                        </tr></thead>
                         <tbody id="tbodyConsumoRota"></tbody>
                     </table>
                 </div>
@@ -3256,24 +3266,9 @@
         // Tabela detalhada
         const tbody = document.getElementById('tbodyConsumoRota'); if(!tbody) return;
         if (rows.length === 0) {
-            tbody.innerHTML='<tr><td colspan="10" class="text-center text-gray-400 py-4">Sem dados — cadastre rotas com empurradores que possuam consumo configurado.</td></tr>';
+            tbody.innerHTML='<tr><td colspan="6" class="text-center text-gray-400 py-4">Sem dados — cadastre rotas com empurradores que possuam consumo configurado.</td></tr>';
         } else {
-            tbody.innerHTML = rowsFiltrados.map(r => {
-                const lpt = r.tons>0 ? r.litros/r.tons : 0;
-                const rpt = r.tons>0 ? r.reais/r.tons  : 0;
-                return `<tr>
-                    <td>${MESES[r.mes]}</td>
-                    <td>${r.rota.nome}</td>
-                    <td>${r.emp.nome}</td>
-                    <td>${r.comb.nome}</td>
-                    <td>${r.viagens.toFixed(1)}</td>
-                    <td>${r.horas.toFixed(1)}</td>
-                    <td>${r.litros.toLocaleString('pt-BR',{maximumFractionDigits:0})}</td>
-                    <td>${r.tons.toLocaleString('pt-BR',{maximumFractionDigits:0})}</td>
-                    <td>${lpt.toFixed(3)}</td>
-                    <td>${rpt.toFixed(2)}</td>
-                </tr>`;
-            }).join('');
+            renderTabelaConsumoAgrupada(tbody, rowsFiltrados);
         }
 
         renderChartCustoVariavel(rowsFiltrados);
@@ -3383,6 +3378,123 @@
             }, options: pieOpts()});
         }
     }
+    function renderTabelaConsumoAgrupada(tbody, rows) {
+        // Agrupa por mês
+        const byMes = {};
+        rows.forEach(r => {
+            if (!byMes[r.mes]) byMes[r.mes] = { litros:0, reais:0, tons:0, seenEmp: new Set(), rows:[] };
+            const m = byMes[r.mes];
+            m.litros += r.litros;
+            m.reais  += r.reais;
+            // tons: evita dupla contagem para o mesmo (rota+emp) que aparece em vários combustíveis
+            const empKey = `${r.rota.id}-${r.emp.id}`;
+            if (!m.seenEmp.has(empKey)) { m.tons += r.tons; m.seenEmp.add(empKey); }
+            m.rows.push(r);
+        });
+
+        tbody.innerHTML = '';
+        const mesesComDados = Object.keys(byMes).map(Number).sort((a,b)=>a-b);
+
+        mesesComDados.forEach(mes => {
+            const m = byMes[mes];
+            const lpt = m.tons > 0 ? m.litros / m.tons : 0;
+            const rpt = m.tons > 0 ? m.reais  / m.tons : 0;
+            const key = `cvmes-${mes}`;
+
+            // ── Linha sumário (clicável) ──
+            const trSum = document.createElement('tr');
+            trSum.className = 'cursor-pointer hover:bg-blue-50 font-medium select-none';
+            trSum.onclick = () => toggleCVMesDetail(key);
+            trSum.innerHTML = `
+                <td class="text-center">
+                    <i id="chevron-${key}" data-lucide="chevron-right"
+                       class="w-4 h-4 text-gray-400 inline-block transition-transform duration-200"></i>
+                </td>
+                <td class="font-semibold">${MESES_FULL[mes]}</td>
+                <td>${m.litros.toLocaleString('pt-BR',{maximumFractionDigits:0})} L</td>
+                <td>${m.tons.toLocaleString('pt-BR',{maximumFractionDigits:0})} t</td>
+                <td>${lpt.toFixed(2)} L/t</td>
+                <td>R$ ${rpt.toFixed(2)}/t</td>`;
+            tbody.appendChild(trSum);
+
+            // ── Linha de detalhe (oculta) ──
+            const trDet = document.createElement('tr');
+            trDet.id = key;
+            trDet.style.display = 'none';
+            trDet.innerHTML = `<td colspan="6" class="p-0 bg-gray-50 border-b border-gray-200">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-xs" style="border-collapse:collapse">
+                        <thead>
+                            <tr class="bg-gray-100 text-gray-600">
+                                <th class="py-2 px-4 text-left font-semibold">Rota</th>
+                                <th class="py-2 px-3 text-left font-semibold">Empurrador</th>
+                                <th class="py-2 px-3 text-left font-semibold">Combustível</th>
+                                <th class="py-2 px-3 text-right font-semibold">Viagens</th>
+                                <th class="py-2 px-3 text-right font-semibold">Horas Nav.</th>
+                                <th class="py-2 px-3 text-right font-semibold">Litros</th>
+                                <th class="py-2 px-3 text-right font-semibold">Toneladas</th>
+                                <th class="py-2 px-3 text-right font-semibold">L/Ton</th>
+                                <th class="py-2 px-3 text-right font-semibold">R$/Ton</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${renderDetalhesMes(m.rows)}
+                        </tbody>
+                    </table>
+                </div>
+            </td>`;
+            tbody.appendChild(trDet);
+        });
+
+        lucide.createIcons();
+    }
+
+    function renderDetalhesMes(rows) {
+        // Agrupa por (rota, emp) para exibir "sub-cabeçalho" por empurrador
+        const grupos = {};
+        rows.forEach(r => {
+            const k = `${r.rota.id}-${r.emp.id}`;
+            if (!grupos[k]) grupos[k] = { rota: r.rota, emp: r.emp, tons: r.tons, items: [] };
+            grupos[k].items.push(r);
+        });
+
+        return Object.values(grupos).map(g => {
+            return g.items.map((r, idx) => {
+                const lpt = g.tons > 0 ? r.litros / g.tons : 0;
+                const rpt = g.tons > 0 ? r.reais  / g.tons : 0;
+                const showRota = idx === 0;
+                const rowspan = g.items.length;
+                const rotaCell = showRota
+                    ? `<td class="py-2 px-4 font-medium text-gray-800 border-b border-gray-200 align-top" rowspan="${rowspan}">${g.rota.nome}</td>
+                       <td class="py-2 px-3 text-gray-600 border-b border-gray-200 align-top" rowspan="${rowspan}">${g.emp.nome}</td>`
+                    : '';
+                const borderCls = idx < g.items.length - 1 ? 'border-b border-gray-100' : 'border-b border-gray-200';
+                const tonCell = showRota
+                    ? `<td class="py-2 px-3 text-right text-gray-700 border-b border-gray-200 align-top" rowspan="${rowspan}">${g.tons.toLocaleString('pt-BR',{maximumFractionDigits:0})}</td>`
+                    : '';
+                return `<tr class="hover:bg-blue-50">
+                    ${rotaCell}
+                    <td class="py-2 px-3 text-gray-500 ${borderCls}">${r.comb.nome}</td>
+                    <td class="py-2 px-3 text-right text-gray-600 ${borderCls}">${r.viagens.toFixed(1)}</td>
+                    <td class="py-2 px-3 text-right text-gray-600 ${borderCls}">${r.horas.toFixed(1)} h</td>
+                    <td class="py-2 px-3 text-right font-medium ${borderCls}">${r.litros.toLocaleString('pt-BR',{maximumFractionDigits:0})}</td>
+                    ${tonCell}
+                    <td class="py-2 px-3 text-right ${borderCls}">${lpt.toFixed(2)}</td>
+                    <td class="py-2 px-3 text-right ${borderCls}">R$ ${rpt.toFixed(2)}</td>
+                </tr>`;
+            }).join('');
+        }).join('');
+    }
+
+    function toggleCVMesDetail(key) {
+        const trDet   = document.getElementById(key);
+        const chevron = document.getElementById(`chevron-${key}`);
+        if (!trDet) return;
+        const isOpen = trDet.style.display !== 'none';
+        trDet.style.display = isOpen ? 'none' : 'table-row';
+        if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(90deg)';
+    }
+
     // ==========================================================================
     // MÓDULO 3: ROTAS
     // ==========================================================================
