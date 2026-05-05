@@ -506,6 +506,7 @@
                             <th>Toneladas</th>
                             <th>L/Ton</th>
                             <th>R$/Ton</th>
+                            <th>Custo Total (R$)</th>
                         </tr></thead>
                         <tbody id="tbodyConsumoRota"></tbody>
                     </table>
@@ -3416,14 +3417,15 @@
                 <td>${m.litros.toLocaleString('pt-BR',{maximumFractionDigits:0})} L</td>
                 <td>${m.tons.toLocaleString('pt-BR',{maximumFractionDigits:0})} t</td>
                 <td>${lpt.toFixed(2)} L/t</td>
-                <td>R$ ${rpt.toFixed(2)}/t</td>`;
+                <td>R$ ${rpt.toFixed(2)}/t</td>
+                <td class="font-semibold text-blue-700">R$ ${m.reais.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>`;
             tbody.appendChild(trSum);
 
             // ── Linha de detalhe (oculta) ──
             const trDet = document.createElement('tr');
             trDet.id = key;
             trDet.style.display = 'none';
-            trDet.innerHTML = `<td colspan="6" class="p-0 bg-gray-50 border-b border-gray-200">
+            trDet.innerHTML = `<td colspan="7" class="p-0 bg-gray-50 border-b border-gray-200">
                 <div class="overflow-x-auto">
                     <table class="w-full text-xs" style="border-collapse:collapse">
                         <thead>
@@ -3437,6 +3439,7 @@
                                 <th class="py-2 px-3 text-right font-semibold">Toneladas</th>
                                 <th class="py-2 px-3 text-right font-semibold">L/Ton</th>
                                 <th class="py-2 px-3 text-right font-semibold">R$/Ton</th>
+                                <th class="py-2 px-3 text-right font-semibold">Custo (R$)</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -3483,6 +3486,7 @@
                     ${tonCell}
                     <td class="py-2 px-3 text-right ${borderCls}">${lpt.toFixed(2)}</td>
                     <td class="py-2 px-3 text-right ${borderCls}">R$ ${rpt.toFixed(2)}</td>
+                    <td class="py-2 px-3 text-right font-semibold text-blue-700 ${borderCls}">R$ ${r.reais.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
                 </tr>`;
             }).join('');
         }).join('');
