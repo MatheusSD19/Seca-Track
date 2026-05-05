@@ -344,7 +344,34 @@
 
         <!-- MÓDULO 2: ATIVOS -->
         <div id="content-ativos" class="tab-content hidden">
-            <div class="grid-2 mb-6">
+
+            <!-- Empurradores — largura total -->
+            <div class="card p-6 mb-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-semibold flex items-center gap-2">
+                        <i data-lucide="anchor" class="w-5 h-5 text-blue-600"></i> Empurradores
+                    </h2>
+                    <button onclick="openModal('empurrador')" class="btn-primary text-sm flex items-center gap-1">
+                        <i data-lucide="plus" class="w-4 h-4"></i> Novo
+                    </button>
+                </div>
+                <div class="table-container">
+                    <table id="tabelaEmpurradores">
+                        <thead>
+                            <tr>
+                                <th>Nome</th><th>HP</th>
+                                <th>Calado Mín</th><th>Calado Máx</th>
+                                <th>Barcaças/Comboio</th><th>Consumos (L/H)</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbodyEmpurradores"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Barcaças + Combustíveis lado a lado -->
+            <div class="grid-2">
                 <div class="card p-6">
                     <div class="flex justify-between items-center mb-4">
                         <h2 class="text-lg font-semibold flex items-center gap-2">
@@ -372,45 +399,20 @@
                 <div class="card p-6">
                     <div class="flex justify-between items-center mb-4">
                         <h2 class="text-lg font-semibold flex items-center gap-2">
-                            <i data-lucide="anchor" class="w-5 h-5 text-blue-600"></i> Empurradores
+                            <i data-lucide="droplets" class="w-5 h-5 text-blue-600"></i> Tipos de Combustível
                         </h2>
-                        <button onclick="openModal('empurrador')" class="btn-primary text-sm flex items-center gap-1">
+                        <button onclick="openModal('consumo')" class="btn-primary text-sm flex items-center gap-1">
                             <i data-lucide="plus" class="w-4 h-4"></i> Novo
                         </button>
                     </div>
                     <div class="table-container">
-                        <table id="tabelaEmpurradores">
-                            <thead>
-                                <tr>
-                                    <th>Nome</th><th>HP</th>
-                                    <th>Calado Mín</th><th>Calado Máx</th>
-                                    <th>Barcaças/Comboio</th><th>Consumos (L/H)</th>
-                                    <th>Ações</th>
-                                </tr>
-                            </thead>
-                            <tbody id="tbodyEmpurradores"></tbody>
+                        <table>
+                            <thead><tr><th>Item</th><th>Preço (R$/L)</th><th>Ações</th></tr></thead>
+                            <tbody id="tbodyConsumos"></tbody>
                         </table>
                     </div>
+                    <p class="text-xs text-gray-500 mt-3">O preço é usado no cálculo automático de Custo Variável.</p>
                 </div>
-            </div>
-
-            <!-- Tipos de Combustível / Consumo -->
-            <div class="card p-6">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-lg font-semibold flex items-center gap-2">
-                        <i data-lucide="droplets" class="w-5 h-5 text-blue-600"></i> Tipos de Combustível
-                    </h2>
-                    <button onclick="openModal('consumo')" class="btn-primary text-sm flex items-center gap-1">
-                        <i data-lucide="plus" class="w-4 h-4"></i> Novo
-                    </button>
-                </div>
-                <div class="table-container">
-                    <table>
-                        <thead><tr><th>Item</th><th>Preço (R$/L)</th><th>Ações</th></tr></thead>
-                        <tbody id="tbodyConsumos"></tbody>
-                    </table>
-                </div>
-                <p class="text-xs text-gray-500 mt-3">Cadastre os tipos de combustível utilizados pelos empurradores. O preço é usado no cálculo automático de Custo Variável.</p>
             </div>
         </div>
 
