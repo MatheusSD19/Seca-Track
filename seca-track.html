@@ -122,7 +122,7 @@
         </div>
     </div>
 
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-3 pb-8">
 
         <!-- MÓDULO 1: NÍVEL DOS RIOS -->
         <div id="content-rios" class="tab-content">
@@ -759,7 +759,7 @@
             </div>
             <div class="space-y-4">
                 <div><label class="block text-sm font-medium text-gray-700 mb-1">Data</label>
-                    <input type="date" id="rioData" class="input-field"></div>
+                    <input type="text" id="rioData" class="input-field" placeholder="DD/MM/AAAA" maxlength="10"></div>
                 <div><label class="block text-sm font-medium text-gray-700 mb-1">Nome do Rio</label>
                     <input type="text" id="rioNome" class="input-field" placeholder="Ex: Rio Amazonas"></div>
                 <div><label class="block text-sm font-medium text-gray-700 mb-1">Nível (metros)</label>
@@ -1694,17 +1694,22 @@
     }
 
     function openManualEntryModal() {
-        document.getElementById('rioData').value = new Date().toISOString().split('T')[0];
+        const _hoje = new Date();
+        document.getElementById('rioData').value = `${String(_hoje.getDate()).padStart(2,'0')}/${String(_hoje.getMonth()+1).padStart(2,'0')}/${_hoje.getFullYear()}`;
         document.getElementById('rioNome').value = '';
         document.getElementById('rioNivel').value = '';
         document.getElementById('modalRio').classList.add('active');
     }
 
     function saveRio() {
-        const data  = document.getElementById('rioData').value;
-        const nome  = document.getElementById('rioNome').value.trim();
-        const nivel = parseNivel(document.getElementById('rioNivel').value);
-        if (!data || !nome || isNaN(nivel)) { alert('Preencha todos os campos.'); return; }
+        const dataRaw = document.getElementById('rioData').value.trim();
+        const nome    = document.getElementById('rioNome').value.trim();
+        const nivel   = parseNivel(document.getElementById('rioNivel').value);
+        const _partes = dataRaw.split('/');
+        if (_partes.length !== 3 || _partes.some(p => !p)) { alert('Data inválida. Use o formato DD/MM/AAAA.'); return; }
+        const data = `${_partes[2].padStart(4,'0')}-${_partes[1].padStart(2,'0')}-${_partes[0].padStart(2,'0')}`;
+        if (isNaN(new Date(data + 'T12:00:00').getTime())) { alert('Data inválida.'); return; }
+        if (!nome || isNaN(nivel)) { alert('Preencha todos os campos.'); return; }
 
         dadosRios.push({ id: Date.now() + Math.random(), data, nome, nivel });
         invalidarCacheProjecao();
@@ -2309,6 +2314,7 @@
                 },
                 scales:{
                     x:{
+                        grid: { display: false },
                         ticks:{
                             callback: (val, index) => {
                                 const lbl = dailyLabels[index];
