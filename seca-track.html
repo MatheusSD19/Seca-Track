@@ -2073,7 +2073,7 @@
             const datas = dadosRios.map(r => new Date(r.data + 'T00:00:00')).filter(d => !isNaN(d));
             const anosDisponiveis = datas.length ? Math.max(...datas.map(d => d.getFullYear())) - Math.min(...datas.map(d => d.getFullYear())) + 1 : 0;
             const anosUsados = anosDisponiveis > 0 ? Math.min(anos, anosDisponiveis) : anos;
-            notaEl.textContent = `Cenários: média histórica por mês ± desvio-padrão + tendência linear dos últimos ${anosUsados} ano${anosUsados !== 1 ? 's' : ''}${anosUsados < anos ? ` (máximo disponível na base)` : ''}. Piso em 0.`;
+            notaEl.textContent = `Cenários: média histórica por mês ± desvio-padrão + tendência linear dos últimos ${anosUsados} ano${anosUsados !== 1 ? 's' : ''}${anosUsados < anos ? ` (máximo disponível na base)` : ''}. Visualização e forecast diários com interpolação linear. Piso em 0.`;
         }
 
         const ctx = document.getElementById('chartRios').getContext('2d');
@@ -2102,61 +2102,113 @@
             return;
         }
 
-        // Conectar histórico e projeção no último ponto observado para unir as linhas
-        const lastHistIdx = proj.historico.reduce((acc,v,i) => v !== null ? i : acc, -1);
-        const medioDs = proj.medio.slice();
-        const otimDs  = proj.otimista.slice();
-        const pessDs  = proj.pessimista.slice();
+        const anoAtual = new Date().getFullYear();
+
+        // Gera labels e datas diárias para o ano inteiro
+        const dailyLabels = [];
+        const dailyDates  = [];
+        const dailyMonths = [];
+        for (let m = 0; m < 12; m++) {
+            const diasMes = new Date(anoAtual, m + 1, 0).getDate();
+            for (let d = 1; d <= diasMes; d++) {
+                dailyDates.push(new Date(anoAtual, m, d));
+                dailyLabels.push(`${String(d).padStart(2,'0')}/${String(m+1).padStart(2,'0')}`);
+                dailyMonths.push(m);
+            }
+        }
+
+        // Medições reais do ano atual agrupadas por data (chave YYYY-MM-DD)
+        const porData = {};
+        dadosRios.filter(r => r.nome === rioSel).forEach(r => {
+            const d = new Date(r.data + 'T12:00:00');
+            if (d.getFullYear() !== anoAtual || isNaN(d.getTime())) return;
+            const k = r.data.substring(0, 10);
+            if (!porData[k]) porData[k] = [];
+            porData[k].push(r.nivel);
+        });
+
+        // Série histórica diária — somente dias com medição real
+        const _fmtKey = date =>
+            `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+
+        const historicoData = dailyDates.map(date => {
+            const vals = porData[_fmtKey(date)];
+            return vals ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+        });
+
+        const lastHistIdx = historicoData.reduce((acc, v, i) => v !== null ? i : acc, -1);
+
+        // Constrói série diária para cada cenário (somente a partir do último dia observado)
+        const buildDailyCenario = (cenario) => {
+            const serie = gerarSerieDiariaRio(rioSel, cenario, proj);
+            if (!serie.length) return dailyDates.map(() => null);
+            const nivelMap = new Map(serie.map(s => [_fmtKey(s.date), s.nivel]));
+            return dailyDates.map((date, i) => {
+                if (i < lastHistIdx) return null;
+                return nivelMap.has(_fmtKey(date)) ? nivelMap.get(_fmtKey(date)) : null;
+            });
+        };
+
+        const medioDs = buildDailyCenario('medio');
+        const otimDs  = buildDailyCenario('otimista');
+        const pessDs  = buildDailyCenario('pessimista');
+
+        // Conectar histórico e projeção no último ponto observado
         if (lastHistIdx >= 0) {
-            const vH = proj.historico[lastHistIdx];
-            medioDs[lastHistIdx] = vH;
-            otimDs[lastHistIdx]  = vH;
-            pessDs[lastHistIdx]  = vH;
+            const vH = historicoData[lastHistIdx];
+            if (medioDs[lastHistIdx] === null) medioDs[lastHistIdx] = vH;
+            if (otimDs[lastHistIdx]  === null) otimDs[lastHistIdx]  = vH;
+            if (pessDs[lastHistIdx]  === null) pessDs[lastHistIdx]  = vH;
         }
 
         // Datasets base — filtrados por cenariosRioOcultos
         const mostrarOtim = !cenariosRioOcultos.has('otimista');
         const mostrarPess = !cenariosRioOcultos.has('pessimista');
         const datasets = [
-            { label:'Histórico',      data: proj.historico, borderColor:'#374151', backgroundColor:'#374151', tension:0.25, pointRadius:4, spanGaps:false, borderWidth:2, fill:false },
-            ...(!cenariosRioOcultos.has('medio') ? [{ label:'Projeção Média', data: medioDs, borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,0.08)', borderDash:[6,4], tension:0.25, pointRadius:3, spanGaps:false, fill:false }] : []),
-            ...(mostrarOtim ? [{ label:'Otimista', data: otimDs, borderColor:'#10b981', backgroundColor:'rgba(16,185,129,0.10)', borderDash:[6,4], tension:0.25, pointRadius:3, spanGaps:false, fill: mostrarPess ? '+1' : false }] : []),
-            ...(mostrarPess ? [{ label:'Pessimista', data: pessDs, borderColor:'#ef4444', backgroundColor:'rgba(239,68,68,0.10)', borderDash:[6,4], tension:0.25, pointRadius:3, spanGaps:false, fill:false }] : []),
+            { label:'Histórico',      data: historicoData, borderColor:'#374151', backgroundColor:'#374151', tension:0.1, pointRadius:0, spanGaps:false, borderWidth:2, fill:false },
+            ...(!cenariosRioOcultos.has('medio') ? [{ label:'Projeção Média', data: medioDs, borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,0.08)', borderDash:[6,4], tension:0.1, pointRadius:0, spanGaps:false, fill:false }] : []),
+            ...(mostrarOtim ? [{ label:'Otimista', data: otimDs, borderColor:'#10b981', backgroundColor:'rgba(16,185,129,0.10)', borderDash:[6,4], tension:0.1, pointRadius:0, spanGaps:false, fill: mostrarPess ? '+1' : false }] : []),
+            ...(mostrarPess ? [{ label:'Pessimista', data: pessDs, borderColor:'#ef4444', backgroundColor:'rgba(239,68,68,0.10)', borderDash:[6,4], tension:0.1, pointRadius:0, spanGaps:false, fill:false }] : []),
         ];
 
         // Datasets dos cenários customizados
         (variaveis.cenariosCustom || []).forEach(c => {
             if (cenariosRioOcultos.has(String(c.id))) return;
-            const ds = (proj.custom[c.id] || []).slice();
-            if (lastHistIdx >= 0 && proj.historico[lastHistIdx] !== null) ds[lastHistIdx] = proj.historico[lastHistIdx];
+            const ds = buildDailyCenario(String(c.id));
+            if (lastHistIdx >= 0 && historicoData[lastHistIdx] !== null && ds[lastHistIdx] === null) {
+                ds[lastHistIdx] = historicoData[lastHistIdx];
+            }
             datasets.push({
                 label: c.nome,
                 data: ds,
                 borderColor: c.cor,
                 backgroundColor: c.cor,
                 borderDash: [3, 3],
-                tension: 0.25,
-                pointRadius: 3,
+                tension: 0.1,
+                pointRadius: 0,
                 spanGaps: false,
                 borderWidth: 2
             });
         });
 
-        // Overlay de anos históricos selecionados
+        // Overlay de anos históricos selecionados — dados diários reais alinhados por dia-do-ano
         const HIST_CORES_OVERLAY = ['#6b7280','#92400e','#1e40af','#065f46','#7c3aed','#9d174d','#b45309','#0e7490'];
         const anoAtualRef = new Date().getFullYear();
         let histCorIdx = 0;
         const historicosAdicionados = [];
         for (const anoHist of [...anosHistoricoSelecionados].sort((a,b)=>a-b)) {
             if (anoHist >= anoAtualRef) continue;
-            const nivelPorMes = Array.from({length: 12}, () => []);
+            const porDataHist = {};
             dadosRios.filter(r => r.nome === rioSel).forEach(r => {
-                const d = new Date(r.data + 'T00:00:00');
-                if (d.getFullYear() === anoHist) nivelPorMes[d.getMonth()].push(r.nivel);
+                const d = new Date(r.data + 'T12:00:00');
+                if (d.getFullYear() !== anoHist || isNaN(d.getTime())) return;
+                const key = `${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                if (!porDataHist[key]) porDataHist[key] = [];
+                porDataHist[key].push(r.nivel);
             });
-            const dataHist = proj.mesesIdx.map(m => {
-                const vals = nivelPorMes[m];
-                return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+            const dataHist = dailyDates.map(date => {
+                const key = `${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+                return porDataHist[key] ? porDataHist[key].reduce((a,b)=>a+b,0)/porDataHist[key].length : null;
             });
             if (dataHist.some(v => v !== null)) {
                 const cor = HIST_CORES_OVERLAY[histCorIdx++ % HIST_CORES_OVERLAY.length];
@@ -2166,9 +2218,9 @@
                     borderColor: cor,
                     backgroundColor: cor,
                     borderDash: [4, 2],
-                    tension: 0.25,
-                    pointRadius: 3,
-                    spanGaps: false,
+                    tension: 0.1,
+                    pointRadius: 0,
+                    spanGaps: true,
                     borderWidth: 2,
                     fill: false
                 });
@@ -2207,7 +2259,7 @@
             const cor = CALADO_CORES[corIdx++ % CALADO_CORES.length];
             datasets.push({
                 label: `${nome} (cal. op. mín. ${nivelMin.toFixed(2)} m)`,
-                data: proj.labels.map(() => nivelMin),
+                data: dailyLabels.map(() => nivelMin),
                 borderColor: cor,
                 backgroundColor: cor,
                 borderDash: [8, 4],
@@ -2221,13 +2273,13 @@
         empurradores.filter(e => e.ativo !== false).forEach(e => addCaladoLine('e-' + e.id, e.nome, e.caladoMin));
         barcacas.filter(b => b.ativo !== false).forEach(b => addCaladoLine('b-' + b.id, b.nome, b.caladoMin));
 
-        // Tooltip com min/max histórico
+        // Tooltip com min/max histórico mensal
         const minMes = proj.minMes || [];
         const maxMes = proj.maxMes || [];
 
         chartRios = new Chart(ctx, {
             type:'line',
-            data: { labels: proj.labels, datasets },
+            data: { labels: dailyLabels, datasets },
             options: {
                 responsive:true, maintainAspectRatio:false,
                 interaction:{ intersect:false, mode:'index' },
@@ -2236,21 +2288,40 @@
                     legend:{ display:false },
                     tooltip:{
                         callbacks:{
+                            title: (items) => {
+                                if (!items.length) return '';
+                                const idx = items[0].dataIndex;
+                                const date = dailyDates[idx];
+                                return `${String(date.getDate()).padStart(2,'0')}/${String(date.getMonth()+1).padStart(2,'0')}/${date.getFullYear()}`;
+                            },
                             label: c => `${c.dataset.label}: ${c.parsed.y?.toFixed(2) ?? '-'} m`,
                             afterBody: (items) => {
                                 if (!items.length) return [];
-                                const labelIdx = proj.labels[items[0].dataIndex];
-                                const mesIdx = proj.mesesIdx[items[0].dataIndex];
+                                const mesIdx = dailyMonths[items[0].dataIndex];
                                 if (mesIdx === undefined) return [];
                                 const mn = minMes[mesIdx];
                                 const mx = maxMes[mesIdx];
                                 if (mn === null || mx === null) return [];
-                                return [`─────────────────`, `Histórico: mín ${mn.toFixed(2)} m  /  máx ${mx.toFixed(2)} m`];
+                                return [`─────────────────`, `Histórico mensal: mín ${mn.toFixed(2)} m  /  máx ${mx.toFixed(2)} m`];
                             }
                         }
                     }
                 },
-                scales:{ y:{ title:{display:true,text:'Nível (m)'}, beginAtZero:true } }
+                scales:{
+                    x:{
+                        ticks:{
+                            callback: (val, index) => {
+                                const lbl = dailyLabels[index];
+                                if (!lbl) return '';
+                                const [day, month] = lbl.split('/');
+                                return day === '01' ? MESES[parseInt(month,10)-1] : '';
+                            },
+                            maxRotation: 0,
+                            autoSkip: false
+                        }
+                    },
+                    y:{ title:{display:true,text:'Nível (m)'}, beginAtZero:true }
+                }
             }
         });
 
