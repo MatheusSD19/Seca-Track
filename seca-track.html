@@ -3550,6 +3550,8 @@
     }
 
     // Calcula consumo automático para o ano/cenário/cenárioRota selecionados.
+    // Usa calcularCapacidadesAjustadas() para respeitar empurradores compartilhados
+    // e restrições de pulmão — igual ao módulo de Capacidade Frota.
     function calcularConsumoAutomatico(ano, cenarioNivel, cenarioRotaId) {
         const rotasAtivas = cenarioRotaId
             ? (cenariosRotas.find(c=>c.id===parseFloat(cenarioRotaId))?.rotasIds||[]).map(rid=>rotas.find(r=>r.id===rid)).filter(Boolean)
@@ -3557,25 +3559,37 @@
 
         const rows = [];
         for (let mes = 0; mes < 12; mes++) {
-            rotasAtivas.forEach(rota => {
-                if (!rotaAtivaNoMes(rota, mes)) return;
-                const nivelRio = getNivelRioCenarioAnoMes(rota.rio, ano, mes, cenarioNivel);
-                if (nivelRio === null || nivelRio === undefined) return;
+            const rotasMes = rotasAtivas.filter(r => rotaAtivaNoMes(r, mes));
+            if (!rotasMes.length) continue;
 
-                (rota.empurradores||[]).forEach(empItem => {
-                    const res = calcularViagensEmpurrador(rota, empItem, mes, ano, nivelRio, cenarioNivel);
-                    if (!res || res.viagens <= 0) return;
-                    const emp = empurradores.find(e=>e.id===empItem.empurradorId);
+            // Monta mapa de nível por rota (igual ao dashboard de capacidade)
+            const nivelRioMap = {};
+            rotasMes.forEach(rota => {
+                const nivel = getNivelRioCenarioAnoMes(rota.rio, ano, mes, cenarioNivel);
+                if (nivel !== null && nivel !== undefined) nivelRioMap[rota.id] = nivel;
+            });
+
+            // Capacidades ajustadas: resolve conflitos de empurradores compartilhados e pulmões
+            const { capacidades } = calcularCapacidadesAjustadas(rotasMes, mes, ano, nivelRioMap, cenarioNivel);
+
+            rotasMes.forEach(rota => {
+                if (nivelRioMap[rota.id] === undefined) return;
+                const cap = capacidades[rota.id];
+                if (!cap || !cap.detalhes) return;
+
+                cap.detalhes.forEach(det => {
+                    if (!det || !(det.viagens > 0) || !(det.volumeTotal > 0)) return;
+                    const emp = det.emp;
                     if (!emp) return;
-                    const horas = res.viagens * (parseFloat(rota.tempoViagemH)||0);
-                    const tons  = res.volumeTotal;
+                    const horas = det.viagens * (parseFloat(rota.tempoViagemH) || 0);
+                    const tons  = det.volumeTotal;
 
-                    (emp.consumos||[]).forEach(ec => {
-                        const comb = consumos.find(c=>c.id===ec.consumoId);
+                    (emp.consumos || []).forEach(ec => {
+                        const comb = consumos.find(c => c.id === ec.consumoId);
                         if (!comb) return;
-                        const litros = horas * (ec.litrosHora||0);
-                        const reais  = litros * (comb.preco||0);
-                        rows.push({ mes, rota, emp, comb, viagens: res.viagens, horas, litros, tons, reais });
+                        const litros = horas * (ec.litrosHora || 0);
+                        const reais  = litros * (comb.preco || 0);
+                        rows.push({ mes, rota, emp, comb, viagens: det.viagens, horas, litros, tons, reais });
                     });
                 });
             });
@@ -5730,16 +5744,15 @@
                 label: c.nome,
                 data: c.data,
                 type: 'line',
-                stack: `custom-${c.id}`,
                 borderColor: c.cor,
                 backgroundColor: 'transparent',
-                borderWidth: 2,
+                borderWidth: 2.5,
                 borderDash: [4, 3],
                 pointRadius: 4,
                 pointBackgroundColor: c.cor,
                 fill: false,
                 tension: 0.2,
-                order: 1
+                order: -2
             }));
 
         chartDashboard = new Chart(ctx, {
