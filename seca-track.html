@@ -2658,7 +2658,7 @@
             const evCorrente  = eventosClimaticos.find(e => e.ano === anoCorrente);
 
             if (evHistorico) {
-                htmlClima += `<br><br>Neste ano, o Histórico de Eventos Climáticos foi:<br><span style="white-space:pre-wrap">${evHistorico.evento}</span>`;
+                htmlClima += `<br><br>Em <strong>${maisProximo.ano}</strong>, o Histórico de Eventos Climáticos foi:<br><span style="white-space:pre-wrap">${evHistorico.evento}</span>`;
             }
             if (evCorrente) {
                 htmlClima += `<br><br>Para este ano, o cenário esperado é:<br><span style="white-space:pre-wrap">${evCorrente.evento}</span>`;
