@@ -304,6 +304,41 @@
                         </button>
                     </div>
 
+                    <!-- Eventos Climáticos -->
+                    <div class="mt-6 pt-6 border-t border-gray-200">
+                        <h3 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                            <i data-lucide="cloud-lightning" class="w-4 h-4 text-amber-500"></i>
+                            Histórico de Eventos Climáticos
+                        </h3>
+                        <div class="space-y-3">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Upload Excel/CSV</label>
+                                <input type="file" id="excelUploadClima" accept=".xlsx,.xls,.csv" class="input-field" onchange="handleExcelUploadClima(this)">
+                                <p class="text-xs text-gray-500 mt-1">Colunas esperadas: <strong>Ano</strong>, <strong>Evento Climático</strong>.</p>
+                            </div>
+                            <div class="relative">
+                                <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-gray-300"></div></div>
+                                <div class="relative flex justify-center text-sm"><span class="px-2 bg-white text-gray-500">ou</span></div>
+                            </div>
+                            <button onclick="openManualEventoClimaticoModal()" class="btn-secondary w-full flex items-center justify-center gap-2">
+                                <i data-lucide="plus" class="w-4 h-4"></i> Inserir Manualmente
+                            </button>
+                        </div>
+                        <!-- Tabela de eventos climáticos carregados -->
+                        <div id="containerTabelaEventosClimaticos" class="mt-4" style="display:none">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-xs font-medium text-gray-600">Eventos carregados</span>
+                                <button onclick="clearEventosClimaticos()" class="text-red-500 hover:text-red-700 text-xs">Limpar tudo</button>
+                            </div>
+                            <div class="table-container max-h-48 overflow-y-auto">
+                                <table id="tabelaEventosClimaticos">
+                                    <thead><tr><th>Ano</th><th>Evento Climático</th><th>Ações</th></tr></thead>
+                                    <tbody id="tbodyEventosClimaticos"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="mt-6 pt-6 border-t border-gray-200">
                         <div class="flex justify-between items-center mb-3">
                             <h3 class="text-sm font-medium text-gray-700">Variáveis de Navegação</h3>
@@ -772,6 +807,31 @@
         </div>
     </div>
 
+    <!-- Modal: Evento Climático -->
+    <div id="modalEventoClimatico" class="modal">
+        <div class="modal-content p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold" id="tituloEventoClimatico">Adicionar Evento Climático</h3>
+                <button onclick="closeModal('eventoClimatico')" class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <input type="hidden" id="eventoClimaticoId">
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Ano</label>
+                    <input type="number" id="eventoClimaticoAno" class="input-field" placeholder="Ex: 2024" min="1900" max="2100">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Evento Climático</label>
+                    <textarea id="eventoClimaticoTexto" class="input-field" rows="5" placeholder="Descreva os eventos climáticos deste ano..." style="resize:vertical"></textarea>
+                </div>
+                <div class="flex gap-3 pt-4">
+                    <button onclick="saveEventoClimatico()" class="btn-primary flex-1">Salvar</button>
+                    <button onclick="closeModal('eventoClimatico')" class="btn-secondary flex-1">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal: Barcaça -->
     <div id="modalBarcaca" class="modal">
         <div class="modal-content p-6">
@@ -1202,6 +1262,7 @@
         cenariosCustom: [],
         caladosVisiveis: {}
     };
+    let eventosClimaticos = [];
     let chartRios = null;
     let chartDashboard = null;
     let chartComparativoCenarios = null;
@@ -1329,6 +1390,7 @@
         };
         return {
             dadosRios, empurradores, barcacas, rotas, cidadesDemanda, cenariosRotas, variaveis, consumos, registrosConsumo,
+            eventosClimaticos,
             uiFiltros,
             exportDate: new Date().toISOString(),
             version: '2.0'
@@ -1349,6 +1411,7 @@
             {id: 2, nome: 'Óleo Combustível Pesado', preco: 4.88}
         ];
         registrosConsumo = data.registrosConsumo || [];
+        eventosClimaticos = data.eventosClimaticos || [];
         variaveis    = Object.assign({
             abaco: 1.03, faq: 0.50, anosProjecao: 3,
             cenarios: { otimista:{abaco:null,faq:null}, medio:{abaco:null,faq:null}, pessimista:{abaco:null,faq:null} },
@@ -1612,6 +1675,7 @@
 
     function updateAllViews() {
         renderTabelaRios();
+        renderTabelaEventosClimaticos();
         renderTabelaBarcacas();
         renderTabelaEmpurradores();
         updateCustoVariavel();
@@ -1737,6 +1801,141 @@
         updateFiltroRio();
         renderTabelaRios();
         updateRioChart();
+    }
+
+    // ==========================================================================
+    // EVENTOS CLIMÁTICOS
+    // ==========================================================================
+
+    function handleExcelUploadClima(input) {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type:'array', cellDates:true });
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet, { raw:false, defval:'' });
+
+                let count = 0, errors = 0;
+                jsonData.forEach(row => {
+                    const keys = Object.keys(row);
+                    const anoVal   = row['Ano'] ?? row['ano'] ?? row['ANO'] ?? row[keys[0]];
+                    const eventoVal = row['Evento Climático'] ?? row['Evento Climatico'] ?? row['evento'] ?? row['Evento'] ?? row[keys[1]];
+
+                    const ano = parseInt(String(anoVal).trim());
+                    const evento = String(eventoVal ?? '').trim();
+                    if (!ano || isNaN(ano) || !evento) { errors++; return; }
+
+                    const existente = eventosClimaticos.find(e => e.ano === ano);
+                    if (existente) {
+                        existente.evento = evento;
+                    } else {
+                        eventosClimaticos.push({ id: Date.now() + Math.random(), ano, evento });
+                    }
+                    count++;
+                });
+
+                eventosClimaticos.sort((a, b) => b.ano - a.ano);
+                saveToLocalStorage();
+                renderTabelaEventosClimaticos();
+                renderInfoUltimaRegua(document.getElementById('filtroRio')?.value || '');
+                alert(`${count} evento(s) importado(s).${errors ? ' ' + errors + ' linha(s) ignorada(s) (formato inválido).' : ''}`);
+            } catch (err) { alert('Erro ao ler arquivo: ' + err.message); }
+        };
+        reader.readAsArrayBuffer(file);
+        input.value = '';
+    }
+
+    function openManualEventoClimaticoModal(id) {
+        const titulo = document.getElementById('tituloEventoClimatico');
+        const idEl   = document.getElementById('eventoClimaticoId');
+        const anoEl  = document.getElementById('eventoClimaticoAno');
+        const textoEl = document.getElementById('eventoClimaticoTexto');
+
+        if (id) {
+            const ev = eventosClimaticos.find(e => e.id === id);
+            if (!ev) return;
+            titulo.textContent = 'Editar Evento Climático';
+            idEl.value = id;
+            anoEl.value = ev.ano;
+            textoEl.value = ev.evento;
+        } else {
+            titulo.textContent = 'Adicionar Evento Climático';
+            idEl.value = '';
+            anoEl.value = new Date().getFullYear();
+            textoEl.value = '';
+        }
+        document.getElementById('modalEventoClimatico').classList.add('active');
+    }
+
+    function saveEventoClimatico() {
+        const idVal   = document.getElementById('eventoClimaticoId').value;
+        const ano     = parseInt(document.getElementById('eventoClimaticoAno').value);
+        const evento  = document.getElementById('eventoClimaticoTexto').value.trim();
+
+        if (!ano || isNaN(ano)) { alert('Informe um ano válido.'); return; }
+        if (!evento) { alert('Informe o texto do evento climático.'); return; }
+
+        if (idVal) {
+            const ev = eventosClimaticos.find(e => e.id == idVal);
+            if (ev) { ev.ano = ano; ev.evento = evento; }
+        } else {
+            const existente = eventosClimaticos.find(e => e.ano === ano);
+            if (existente) {
+                if (!confirm(`Já existe um registro para ${ano}. Deseja substituí-lo?`)) return;
+                existente.evento = evento;
+            } else {
+                eventosClimaticos.push({ id: Date.now() + Math.random(), ano, evento });
+            }
+        }
+
+        eventosClimaticos.sort((a, b) => b.ano - a.ano);
+        saveToLocalStorage();
+        renderTabelaEventosClimaticos();
+        renderInfoUltimaRegua(document.getElementById('filtroRio')?.value || '');
+        closeModal('eventoClimatico');
+    }
+
+    function deleteEventoClimatico(id) {
+        if (!confirm('Excluir este evento climático?')) return;
+        eventosClimaticos = eventosClimaticos.filter(e => e.id !== id);
+        saveToLocalStorage();
+        renderTabelaEventosClimaticos();
+        renderInfoUltimaRegua(document.getElementById('filtroRio')?.value || '');
+    }
+
+    function clearEventosClimaticos() {
+        if (!confirm('Limpar TODOS os eventos climáticos?')) return;
+        eventosClimaticos = [];
+        saveToLocalStorage();
+        renderTabelaEventosClimaticos();
+        renderInfoUltimaRegua(document.getElementById('filtroRio')?.value || '');
+    }
+
+    function renderTabelaEventosClimaticos() {
+        const container = document.getElementById('containerTabelaEventosClimaticos');
+        const tbody = document.getElementById('tbodyEventosClimaticos');
+        if (!container || !tbody) return;
+
+        if (!eventosClimaticos.length) {
+            container.style.display = 'none';
+            return;
+        }
+        container.style.display = '';
+        tbody.innerHTML = eventosClimaticos.map(ev => `
+            <tr>
+                <td class="font-medium">${ev.ano}</td>
+                <td class="text-xs" style="white-space:pre-wrap;max-width:300px">${ev.evento}</td>
+                <td>
+                    <div class="flex gap-2">
+                        <button onclick="openManualEventoClimaticoModal(${ev.id})" class="text-blue-600 hover:text-blue-800 text-xs">Editar</button>
+                        <button onclick="deleteEventoClimatico(${ev.id})" class="text-red-500 hover:text-red-700 text-xs">Excluir</button>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
     }
 
     function renderTabelaRios() {
@@ -2445,12 +2644,28 @@
         }
 
         const { ultimo, maisProximo } = resumo;
+        const anoCorrente = new Date().getFullYear();
+
         const primeiraLinha = `Última atualização da régua: <strong>${formatNivel(ultimo.nivel)} m</strong> em <strong>${formatDate(ultimo.data)}</strong>.`;
         const segundaLinha = maisProximo
             ? `Este nível está mais próximo da média histórica de <strong>${maisProximo.ano}</strong>, que foi de <strong>${formatNivel(maisProximo.nivel)} m</strong> na mesma data.`
             : 'Não há histórico em outros anos para a mesma data.';
 
-        texto.innerHTML = `${primeiraLinha}<br>${segundaLinha}`;
+        let htmlClima = '';
+        if (eventosClimaticos.length) {
+            const anoRef = maisProximo ? maisProximo.ano : null;
+            const evHistorico = anoRef ? eventosClimaticos.find(e => e.ano === anoRef) : null;
+            const evCorrente  = eventosClimaticos.find(e => e.ano === anoCorrente);
+
+            if (evHistorico) {
+                htmlClima += `<br><br>Neste ano, o Histórico de Eventos Climáticos foi:<br><span style="white-space:pre-wrap">${evHistorico.evento}</span>`;
+            }
+            if (evCorrente) {
+                htmlClima += `<br><br>Para este ano, o cenário esperado é:<br><span style="white-space:pre-wrap">${evCorrente.evento}</span>`;
+            }
+        }
+
+        texto.innerHTML = `${primeiraLinha}<br>${segundaLinha}${htmlClima}`;
         painel.style.display = '';
     }
 
