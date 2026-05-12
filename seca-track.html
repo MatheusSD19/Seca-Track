@@ -799,7 +799,30 @@
             </div>
             <div class="space-y-4">
                 <div><label class="block text-sm font-medium text-gray-700 mb-1">Data</label>
-                    <input type="date" id="rioData" class="input-field"></div>
+                    <div class="relative">
+                        <input type="text" id="rioData" class="input-field pr-9" placeholder="DD/MM/AAAA" maxlength="10" oninput="formatarDataInput(this)" autocomplete="off">
+                        <button type="button" onclick="toggleCalendarioRio(event)" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                            <i data-lucide="calendar" class="w-4 h-4"></i>
+                        </button>
+                        <div id="calendarioRio" class="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 p-3 hidden" style="min-width:252px">
+                            <div class="flex items-center justify-between mb-2">
+                                <button type="button" onclick="navCalendario(-1)" class="text-gray-400 hover:text-gray-700 p-1 rounded hover:bg-gray-100"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+                                <span id="calendarioHeader" class="text-sm font-semibold text-gray-700"></span>
+                                <button type="button" onclick="navCalendario(1)" class="text-gray-400 hover:text-gray-700 p-1 rounded hover:bg-gray-100"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+                            </div>
+                            <div class="grid grid-cols-7 mb-1">
+                                <span class="text-center text-xs text-gray-400 font-medium py-0.5">Dom</span>
+                                <span class="text-center text-xs text-gray-400 font-medium py-0.5">Seg</span>
+                                <span class="text-center text-xs text-gray-400 font-medium py-0.5">Ter</span>
+                                <span class="text-center text-xs text-gray-400 font-medium py-0.5">Qua</span>
+                                <span class="text-center text-xs text-gray-400 font-medium py-0.5">Qui</span>
+                                <span class="text-center text-xs text-gray-400 font-medium py-0.5">Sex</span>
+                                <span class="text-center text-xs text-gray-400 font-medium py-0.5">Sáb</span>
+                            </div>
+                            <div id="calendarioDias" class="grid grid-cols-7 gap-y-0.5"></div>
+                        </div>
+                    </div>
+                </div>
                 <div><label class="block text-sm font-medium text-gray-700 mb-1">Nome do Rio</label>
                     <input type="text" id="rioNome" class="input-field" placeholder="Ex: Rio Amazonas"></div>
                 <div><label class="block text-sm font-medium text-gray-700 mb-1">Nível (metros)</label>
@@ -1393,6 +1416,14 @@
             const el = document.getElementById(id);
             if (el) el.addEventListener('change', () => saveToLocalStorage());
         });
+
+        // Fecha o mini calendário ao clicar fora dele
+        document.addEventListener('click', e => {
+            const cal = document.getElementById('calendarioRio');
+            if (cal && !cal.classList.contains('hidden') && !cal.closest('.relative')?.contains(e.target)) {
+                cal.classList.add('hidden');
+            }
+        });
     });
 
     function buildCidadeMetasGrid() {
@@ -1839,21 +1870,91 @@
 
     function openManualEntryModal() {
         const hoje = new Date();
-        const yyyy = hoje.getFullYear();
-        const mm   = String(hoje.getMonth()+1).padStart(2,'0');
         const dd   = String(hoje.getDate()).padStart(2,'0');
-        document.getElementById('rioData').value  = `${yyyy}-${mm}-${dd}`;
+        const mm   = String(hoje.getMonth()+1).padStart(2,'0');
+        const yyyy = hoje.getFullYear();
+        document.getElementById('rioData').value  = `${dd}/${mm}/${yyyy}`;
         const lastRio = dadosRios.length ? dadosRios.reduce((a, b) => a.id > b.id ? a : b) : null;
         document.getElementById('rioNome').value  = lastRio?.nome || '';
         document.getElementById('rioNivel').value = '';
         document.getElementById('modalRio').classList.add('active');
+        lucide.createIcons();
     }
 
+    // ── Mini calendário do modal de medição ────────────────────────────────
+    let _calMes = new Date().getMonth();
+    let _calAno = new Date().getFullYear();
+
+    function toggleCalendarioRio(e) {
+        e.stopPropagation();
+        const cal = document.getElementById('calendarioRio');
+        const val = document.getElementById('rioData').value;
+        const p   = val.split('/');
+        if (p.length === 3 && p[2].length === 4) {
+            const d = new Date(`${p[2]}-${p[1]}-${p[0]}T12:00:00`);
+            if (!isNaN(d)) { _calMes = d.getMonth(); _calAno = d.getFullYear(); }
+        } else { _calMes = new Date().getMonth(); _calAno = new Date().getFullYear(); }
+        if (cal.classList.contains('hidden')) { renderCalendarioRio(); cal.classList.remove('hidden'); }
+        else cal.classList.add('hidden');
+    }
+
+    function navCalendario(delta) {
+        _calMes += delta;
+        if (_calMes > 11) { _calMes = 0; _calAno++; }
+        if (_calMes < 0)  { _calMes = 11; _calAno--; }
+        renderCalendarioRio();
+    }
+
+    function renderCalendarioRio() {
+        const header = document.getElementById('calendarioHeader');
+        const grid   = document.getElementById('calendarioDias');
+        if (!header || !grid) return;
+        header.textContent = `${MESES_FULL[_calMes]} ${_calAno}`;
+        const primeiroDia = new Date(_calAno, _calMes, 1).getDay();
+        const ultimoDia   = new Date(_calAno, _calMes + 1, 0).getDate();
+        const val = document.getElementById('rioData').value;
+        const p   = val.split('/');
+        const diaSel = p.length === 3 ? parseInt(p[0]) : null;
+        const mesSel = p.length === 3 ? parseInt(p[1]) - 1 : null;
+        const anoSel = p.length === 3 ? parseInt(p[2]) : null;
+        const hoje   = new Date();
+        let html = '';
+        for (let i = 0; i < primeiroDia; i++) html += '<span></span>';
+        for (let d = 1; d <= ultimoDia; d++) {
+            const sel   = diaSel === d && mesSel === _calMes && anoSel === _calAno;
+            const hj    = hoje.getDate() === d && hoje.getMonth() === _calMes && hoje.getFullYear() === _calAno;
+            const cls   = sel ? 'bg-blue-600 text-white rounded-full'
+                        : hj  ? 'bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200'
+                               : 'text-gray-700 hover:bg-gray-100 rounded-full';
+            html += `<button type="button" onclick="selecionarDiaCalendario(${d})"
+                        class="text-xs w-7 h-7 flex items-center justify-center mx-auto cursor-pointer ${cls}">${d}</button>`;
+        }
+        grid.innerHTML = html;
+    }
+
+    function selecionarDiaCalendario(dia) {
+        const dd = String(dia).padStart(2,'0');
+        const mm = String(_calMes + 1).padStart(2,'0');
+        document.getElementById('rioData').value = `${dd}/${mm}/${_calAno}`;
+        document.getElementById('calendarioRio').classList.add('hidden');
+    }
+
+    function formatarDataInput(input) {
+        let v = input.value.replace(/\D/g, '');
+        if (v.length > 2) v = v.slice(0,2) + '/' + v.slice(2);
+        if (v.length > 5) v = v.slice(0,5) + '/' + v.slice(5);
+        input.value = v.slice(0, 10);
+    }
+    // ── Fim do mini calendário ─────────────────────────────────────────────
+
     function saveRio() {
-        const data  = document.getElementById('rioData').value;
-        const nome  = document.getElementById('rioNome').value.trim();
-        const nivel = parseNivel(document.getElementById('rioNivel').value);
-        if (!data || isNaN(new Date(data + 'T12:00:00').getTime())) { alert('Data inválida.'); return; }
+        const dataRaw = document.getElementById('rioData').value.trim();
+        const nome    = document.getElementById('rioNome').value.trim();
+        const nivel   = parseNivel(document.getElementById('rioNivel').value);
+        const _partes = dataRaw.split('/');
+        if (_partes.length !== 3 || _partes.some(p => !p)) { alert('Data inválida. Use o formato DD/MM/AAAA.'); return; }
+        const data = `${_partes[2].padStart(4,'0')}-${_partes[1].padStart(2,'0')}-${_partes[0].padStart(2,'0')}`;
+        if (isNaN(new Date(data + 'T12:00:00').getTime())) { alert('Data inválida.'); return; }
         if (!nome || isNaN(nivel)) { alert('Preencha todos os campos.'); return; }
 
         dadosRios.push({ id: Date.now() + Math.random(), data, nome, nivel });
