@@ -149,7 +149,7 @@
                 </div>
                 <div class="chart-container"><canvas id="chartRios"></canvas></div>
                 <p class="text-xs text-gray-500 mt-2" id="notaGraficoRios">
-                    Cenários baseados em média histórica por mês ± desvio-padrão + tendência linear. Piso em 0.
+                    Cenários baseados em projeção histórica por mês. Tipo de projeção configurável em "Gerenciar Cenários". Piso em 0.
                 </p>
                 <!-- Calados mínimos dos ativos -->
                 <div class="mt-3 pt-3 border-t border-gray-100" id="painelCalados" style="display:none">
@@ -1081,12 +1081,31 @@
 
             <!-- Cenários base -->
             <div class="mb-5">
-                <h4 class="text-sm font-semibold text-gray-700 mb-1">Cenários padrão — variáveis de navegação</h4>
-                <p class="text-xs text-gray-500 mb-3">Deixe em branco para usar os valores globais. A projeção do nível usa média ± 1 desvio-padrão mensal.</p>
+                <h4 class="text-sm font-semibold text-gray-700 mb-1">Cenários padrão</h4>
+                <p class="text-xs text-gray-500 mb-3">Configure o tipo de projeção do nível do rio e as variáveis de navegação. Ábaco/FAQ em branco usa o valor global.</p>
                 <div class="space-y-3">
+                    <!-- Otimista -->
                     <div class="border-l-4 border-green-500 pl-3 py-1">
-                        <div class="flex items-center justify-between mb-2">
-                            <span class="font-semibold text-green-700 text-sm">Otimista <span class="text-xs font-normal text-gray-400">(média + 1σ)</span></span>
+                        <div class="mb-2">
+                            <span class="font-semibold text-green-700 text-sm block mb-2">Otimista</span>
+                            <label class="text-xs text-gray-600">Tipo de projeção do nível do rio</label>
+                            <select id="cenOtimistaTipo" class="input-field text-sm" onchange="updateCenarioPadraoTipoUI('Otimista')">
+                                <option value="desvio">Múltiplo do desvio-padrão mensal</option>
+                                <option value="percentual">Percentual sobre a projeção base (médio)</option>
+                                <option value="manual">Nível fixo manual por mês</option>
+                            </select>
+                        </div>
+                        <div id="paramDesvioOtimista" class="mb-2">
+                            <label class="text-xs text-gray-600">Multiplicador σ <span class="text-gray-400 font-normal">(ex: +1 = média+1σ)</span></label>
+                            <input type="number" id="cenOtimistaStd" step="0.1" class="input-field" value="1">
+                        </div>
+                        <div id="paramPercentualOtimista" class="mb-2 hidden">
+                            <label class="text-xs text-gray-600">Percentual sobre o médio (%)</label>
+                            <input type="number" id="cenOtimistaPerc" step="1" class="input-field" value="0">
+                        </div>
+                        <div id="paramManualOtimista" class="mb-2 hidden">
+                            <label class="text-xs text-gray-600 block mb-1">Nível médio por mês (m) — vazio = usa projeção base</label>
+                            <div id="manuaisGridOtimista" class="grid grid-cols-3 md:grid-cols-6 gap-1"></div>
                         </div>
                         <div class="grid-2">
                             <div><label class="text-xs text-gray-600">Ábaco</label>
@@ -1095,9 +1114,28 @@
                                 <input type="number" id="cenOtimistaFaq" step="0.01" class="input-field" placeholder="Global"></div>
                         </div>
                     </div>
+                    <!-- Médio -->
                     <div class="border-l-4 border-blue-500 pl-3 py-1">
-                        <div class="flex items-center justify-between mb-2">
-                            <span class="font-semibold text-blue-700 text-sm">Médio <span class="text-xs font-normal text-gray-400">(média histórica + tendência)</span></span>
+                        <div class="mb-2">
+                            <span class="font-semibold text-blue-700 text-sm block mb-2">Médio</span>
+                            <label class="text-xs text-gray-600">Tipo de projeção do nível do rio</label>
+                            <select id="cenMedioTipo" class="input-field text-sm" onchange="updateCenarioPadraoTipoUI('Medio')">
+                                <option value="desvio">Múltiplo do desvio-padrão mensal</option>
+                                <option value="percentual">Percentual sobre a projeção base (médio)</option>
+                                <option value="manual">Nível fixo manual por mês</option>
+                            </select>
+                        </div>
+                        <div id="paramDesvioMedio" class="mb-2">
+                            <label class="text-xs text-gray-600">Multiplicador σ <span class="text-gray-400 font-normal">(0 = média histórica + tendência)</span></label>
+                            <input type="number" id="cenMedioStd" step="0.1" class="input-field" value="0">
+                        </div>
+                        <div id="paramPercentualMedio" class="mb-2 hidden">
+                            <label class="text-xs text-gray-600">Percentual sobre o médio (%)</label>
+                            <input type="number" id="cenMedioPerc" step="1" class="input-field" value="0">
+                        </div>
+                        <div id="paramManualMedio" class="mb-2 hidden">
+                            <label class="text-xs text-gray-600 block mb-1">Nível médio por mês (m) — vazio = usa projeção base</label>
+                            <div id="manuaisGridMedio" class="grid grid-cols-3 md:grid-cols-6 gap-1"></div>
                         </div>
                         <div class="grid-2">
                             <div><label class="text-xs text-gray-600">Ábaco</label>
@@ -1106,9 +1144,28 @@
                                 <input type="number" id="cenMedioFaq" step="0.01" class="input-field" placeholder="Global"></div>
                         </div>
                     </div>
+                    <!-- Pessimista -->
                     <div class="border-l-4 border-red-500 pl-3 py-1">
-                        <div class="flex items-center justify-between mb-2">
-                            <span class="font-semibold text-red-700 text-sm">Pessimista <span class="text-xs font-normal text-gray-400">(média − 1σ)</span></span>
+                        <div class="mb-2">
+                            <span class="font-semibold text-red-700 text-sm block mb-2">Pessimista</span>
+                            <label class="text-xs text-gray-600">Tipo de projeção do nível do rio</label>
+                            <select id="cenPessimistaTipo" class="input-field text-sm" onchange="updateCenarioPadraoTipoUI('Pessimista')">
+                                <option value="desvio">Múltiplo do desvio-padrão mensal</option>
+                                <option value="percentual">Percentual sobre a projeção base (médio)</option>
+                                <option value="manual">Nível fixo manual por mês</option>
+                            </select>
+                        </div>
+                        <div id="paramDesvioPessimista" class="mb-2">
+                            <label class="text-xs text-gray-600">Multiplicador σ <span class="text-gray-400 font-normal">(ex: -1 = média−1σ)</span></label>
+                            <input type="number" id="cenPessimistaStd" step="0.1" class="input-field" value="-1">
+                        </div>
+                        <div id="paramPercentualPessimista" class="mb-2 hidden">
+                            <label class="text-xs text-gray-600">Percentual sobre o médio (%)</label>
+                            <input type="number" id="cenPessimistaPerc" step="1" class="input-field" value="0">
+                        </div>
+                        <div id="paramManualPessimista" class="mb-2 hidden">
+                            <label class="text-xs text-gray-600 block mb-1">Nível médio por mês (m) — vazio = usa projeção base</label>
+                            <div id="manuaisGridPessimista" class="grid grid-cols-3 md:grid-cols-6 gap-1"></div>
                         </div>
                         <div class="grid-2">
                             <div><label class="text-xs text-gray-600">Ábaco</label>
@@ -1255,9 +1312,9 @@
         faq: 0.50,
         anosProjecao: 3,
         cenarios: {
-            otimista:   { abaco: null, faq: null },
-            medio:      { abaco: null, faq: null },
-            pessimista: { abaco: null, faq: null }
+            otimista:   { tipo: 'desvio', multiplicadorStd: 1,  percentual: null, niveisManuais: null, abaco: null, faq: null },
+            medio:      { tipo: 'desvio', multiplicadorStd: 0,  percentual: null, niveisManuais: null, abaco: null, faq: null },
+            pessimista: { tipo: 'desvio', multiplicadorStd: -1, percentual: null, niveisManuais: null, abaco: null, faq: null }
         },
         cenariosCustom: [],
         caladosVisiveis: {}
@@ -1414,13 +1471,31 @@
         eventosClimaticos = data.eventosClimaticos || [];
         variaveis    = Object.assign({
             abaco: 1.03, faq: 0.50, anosProjecao: 3,
-            cenarios: { otimista:{abaco:null,faq:null}, medio:{abaco:null,faq:null}, pessimista:{abaco:null,faq:null} },
+            cenarios: {
+                otimista:   { tipo: 'desvio', multiplicadorStd: 1,  percentual: null, niveisManuais: null, abaco: null, faq: null },
+                medio:      { tipo: 'desvio', multiplicadorStd: 0,  percentual: null, niveisManuais: null, abaco: null, faq: null },
+                pessimista: { tipo: 'desvio', multiplicadorStd: -1, percentual: null, niveisManuais: null, abaco: null, faq: null }
+            },
             cenariosCustom: []
         }, data.variaveis || {});
         if (!variaveis.cenariosCustom) variaveis.cenariosCustom = [];
         if (!variaveis.cenarios) {
-            variaveis.cenarios = { otimista:{abaco:null,faq:null}, medio:{abaco:null,faq:null}, pessimista:{abaco:null,faq:null} };
+            variaveis.cenarios = {
+                otimista:   { tipo: 'desvio', multiplicadorStd: 1,  percentual: null, niveisManuais: null, abaco: null, faq: null },
+                medio:      { tipo: 'desvio', multiplicadorStd: 0,  percentual: null, niveisManuais: null, abaco: null, faq: null },
+                pessimista: { tipo: 'desvio', multiplicadorStd: -1, percentual: null, niveisManuais: null, abaco: null, faq: null }
+            };
         }
+        // Retrocompatibilidade: garante campos de projeção nos cenários padrão
+        const _defStd = { otimista: 1, medio: 0, pessimista: -1 };
+        ['otimista', 'medio', 'pessimista'].forEach(k => {
+            if (!variaveis.cenarios[k]) variaveis.cenarios[k] = {};
+            const cen = variaveis.cenarios[k];
+            if (!cen.tipo) cen.tipo = 'desvio';
+            if (cen.multiplicadorStd === undefined || cen.multiplicadorStd === null) cen.multiplicadorStd = _defStd[k];
+            if (cen.percentual === undefined) cen.percentual = null;
+            if (!Array.isArray(cen.niveisManuais)) cen.niveisManuais = null;
+        });
         if (!variaveis.caladosVisiveis) variaveis.caladosVisiveis = {};
         // Retrocompatibilidade: garante campo ativo nos ativos existentes
         empurradores.forEach(e => { if (e.ativo === undefined) e.ativo = true; });
@@ -2061,6 +2136,10 @@
 
         const projecao = { historico:[], medio:[], otimista:[], pessimista:[], labels:[], mesesIdx:[], custom, minMes, maxMes };
 
+        const _cenOtimConf = { tipo: variaveis.cenarios.otimista?.tipo || 'desvio', multiplicadorStd: variaveis.cenarios.otimista?.multiplicadorStd ?? 1,  percentual: variaveis.cenarios.otimista?.percentual,   niveisManuais: variaveis.cenarios.otimista?.niveisManuais };
+        const _cenMedConf  = { tipo: variaveis.cenarios.medio?.tipo    || 'desvio', multiplicadorStd: variaveis.cenarios.medio?.multiplicadorStd    ?? 0,  percentual: variaveis.cenarios.medio?.percentual,      niveisManuais: variaveis.cenarios.medio?.niveisManuais };
+        const _cenPesConf  = { tipo: variaveis.cenarios.pessimista?.tipo|| 'desvio', multiplicadorStd: variaveis.cenarios.pessimista?.multiplicadorStd ?? -1, percentual: variaveis.cenarios.pessimista?.percentual, niveisManuais: variaveis.cenarios.pessimista?.niveisManuais };
+
         // Histórico do ano atual (média mensal observada)
         const obsPorMes = Array.from({length:12}, () => []);
         dadosRio.forEach(r => {
@@ -2088,9 +2167,9 @@
             const std  = stdMes[m] > 0 ? stdMes[m] : fallbackStd;
             const ajuste = tendencia * Math.max(1, m - mesAtual);
 
-            const medio      = Math.max(0, base + ajuste);
-            const otimista   = Math.max(0, medio + std);
-            const pessimista = Math.max(0, medio - std);
+            const medio      = projetarNivelCenarioCustom(_cenMedConf,  m, base, std, ajuste);
+            const otimista   = projetarNivelCenarioCustom(_cenOtimConf, m, base, std, ajuste);
+            const pessimista = projetarNivelCenarioCustom(_cenPesConf,  m, base, std, ajuste);
 
             projecao.historico.push(null);
             projecao.medio.push(medio);
@@ -3476,12 +3555,28 @@
             document.getElementById('modalConsumo').classList.add('active');
         } else if (tipo === 'cenarios') {
             const c = variaveis.cenarios;
-            document.getElementById('cenOtimistaAbaco').value    = c.otimista.abaco ?? '';
-            document.getElementById('cenOtimistaFaq').value      = c.otimista.faq   ?? '';
-            document.getElementById('cenMedioAbaco').value       = c.medio.abaco    ?? '';
-            document.getElementById('cenMedioFaq').value         = c.medio.faq      ?? '';
-            document.getElementById('cenPessimistaAbaco').value  = c.pessimista.abaco ?? '';
-            document.getElementById('cenPessimistaFaq').value    = c.pessimista.faq   ?? '';
+            const defaultsStd = { Otimista: 1, Medio: 0, Pessimista: -1 };
+            [['Otimista','otimista'], ['Medio','medio'], ['Pessimista','pessimista']].forEach(([nome, key]) => {
+                const grid = document.getElementById(`manuaisGrid${nome}`);
+                if (grid) {
+                    grid.innerHTML = MESES.map((mes, i) => `
+                        <div>
+                            <label class="text-xs text-gray-500">${mes}</label>
+                            <input type="number" id="cen${nome}Manual${i}" class="input-field text-sm" step="0.01" placeholder="m">
+                        </div>`).join('');
+                }
+                const cen = c[key] || {};
+                document.getElementById(`cen${nome}Tipo`).value = cen.tipo || 'desvio';
+                document.getElementById(`cen${nome}Std`).value  = cen.multiplicadorStd ?? defaultsStd[nome];
+                document.getElementById(`cen${nome}Perc`).value = cen.percentual ?? 0;
+                document.getElementById(`cen${nome}Abaco`).value = cen.abaco ?? '';
+                document.getElementById(`cen${nome}Faq`).value   = cen.faq   ?? '';
+                (cen.niveisManuais || []).forEach((v, i) => {
+                    const inp = document.getElementById(`cen${nome}Manual${i}`);
+                    if (inp) inp.value = v ?? '';
+                });
+                updateCenarioPadraoTipoUI(nome);
+            });
             renderListaCenariosCustom();
             document.getElementById('modalCenarios').classList.add('active');
         }
@@ -3560,11 +3655,16 @@
     }
 
     function saveCenarios() {
-        variaveis.cenarios = {
-            otimista:   { abaco: numOrNull(document.getElementById('cenOtimistaAbaco').value),   faq: numOrNull(document.getElementById('cenOtimistaFaq').value)   },
-            medio:      { abaco: numOrNull(document.getElementById('cenMedioAbaco').value),      faq: numOrNull(document.getElementById('cenMedioFaq').value)      },
-            pessimista: { abaco: numOrNull(document.getElementById('cenPessimistaAbaco').value), faq: numOrNull(document.getElementById('cenPessimistaFaq').value) }
-        };
+        [['Otimista','otimista'], ['Medio','medio'], ['Pessimista','pessimista']].forEach(([nome, key]) => {
+            variaveis.cenarios[key] = {
+                tipo:            document.getElementById(`cen${nome}Tipo`).value,
+                multiplicadorStd: numOrNull(document.getElementById(`cen${nome}Std`).value),
+                percentual:       numOrNull(document.getElementById(`cen${nome}Perc`).value),
+                niveisManuais:    MESES.map((_, i) => numOrNull(document.getElementById(`cen${nome}Manual${i}`)?.value)),
+                abaco: numOrNull(document.getElementById(`cen${nome}Abaco`).value),
+                faq:   numOrNull(document.getElementById(`cen${nome}Faq`).value)
+            };
+        });
         invalidarCacheProjecao();
         saveToLocalStorage();
         if (!document.getElementById('content-dashboard').classList.contains('hidden')) updateDashboard();
@@ -4581,6 +4681,13 @@
         document.getElementById('paramDesvio').classList.toggle('hidden',    tipo !== 'desvio');
         document.getElementById('paramPercentual').classList.toggle('hidden', tipo !== 'percentual');
         document.getElementById('paramManual').classList.toggle('hidden',     tipo !== 'manual');
+    }
+
+    function updateCenarioPadraoTipoUI(nome) {
+        const tipo = document.getElementById(`cen${nome}Tipo`).value;
+        document.getElementById(`paramDesvio${nome}`).classList.toggle('hidden',     tipo !== 'desvio');
+        document.getElementById(`paramPercentual${nome}`).classList.toggle('hidden', tipo !== 'percentual');
+        document.getElementById(`paramManual${nome}`).classList.toggle('hidden',     tipo !== 'manual');
     }
 
     function saveCenarioCustom() {
