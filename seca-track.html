@@ -189,6 +189,11 @@
                 </div>
                 <div class="mt-3 pt-3 border-t border-gray-100" id="infoUltimaRegua" style="display:none">
                     <p id="textoUltimaRegua" class="text-xs text-gray-600 leading-5"></p>
+                    <div id="seletorClimaContainer" class="flex items-center gap-1.5 mt-2 hidden">
+                        <span class="text-xs text-gray-500">Ver eventos de:</span>
+                        <select id="seletorAnoClima" class="text-xs border border-gray-300 rounded px-1.5 py-0.5 bg-white cursor-pointer" onchange="atualizarEventoClima()"></select>
+                    </div>
+                    <div id="textoEventoClima" class="text-xs text-gray-600 leading-5 mt-1"></div>
                 </div>
             </div>
 
@@ -794,7 +799,7 @@
             </div>
             <div class="space-y-4">
                 <div><label class="block text-sm font-medium text-gray-700 mb-1">Data</label>
-                    <input type="text" id="rioData" class="input-field" placeholder="DD/MM/AAAA" maxlength="10"></div>
+                    <input type="date" id="rioData" class="input-field"></div>
                 <div><label class="block text-sm font-medium text-gray-700 mb-1">Nome do Rio</label>
                     <input type="text" id="rioNome" class="input-field" placeholder="Ex: Rio Amazonas"></div>
                 <div><label class="block text-sm font-medium text-gray-700 mb-1">Nível (metros)</label>
@@ -1833,21 +1838,22 @@
     }
 
     function openManualEntryModal() {
-        const _hoje = new Date();
-        document.getElementById('rioData').value = `${String(_hoje.getDate()).padStart(2,'0')}/${String(_hoje.getMonth()+1).padStart(2,'0')}/${_hoje.getFullYear()}`;
-        document.getElementById('rioNome').value = '';
+        const hoje = new Date();
+        const yyyy = hoje.getFullYear();
+        const mm   = String(hoje.getMonth()+1).padStart(2,'0');
+        const dd   = String(hoje.getDate()).padStart(2,'0');
+        document.getElementById('rioData').value  = `${yyyy}-${mm}-${dd}`;
+        const lastRio = dadosRios.length ? dadosRios.reduce((a, b) => a.id > b.id ? a : b) : null;
+        document.getElementById('rioNome').value  = lastRio?.nome || '';
         document.getElementById('rioNivel').value = '';
         document.getElementById('modalRio').classList.add('active');
     }
 
     function saveRio() {
-        const dataRaw = document.getElementById('rioData').value.trim();
-        const nome    = document.getElementById('rioNome').value.trim();
-        const nivel   = parseNivel(document.getElementById('rioNivel').value);
-        const _partes = dataRaw.split('/');
-        if (_partes.length !== 3 || _partes.some(p => !p)) { alert('Data inválida. Use o formato DD/MM/AAAA.'); return; }
-        const data = `${_partes[2].padStart(4,'0')}-${_partes[1].padStart(2,'0')}-${_partes[0].padStart(2,'0')}`;
-        if (isNaN(new Date(data + 'T12:00:00').getTime())) { alert('Data inválida.'); return; }
+        const data  = document.getElementById('rioData').value;
+        const nome  = document.getElementById('rioNome').value.trim();
+        const nivel = parseNivel(document.getElementById('rioNivel').value);
+        if (!data || isNaN(new Date(data + 'T12:00:00').getTime())) { alert('Data inválida.'); return; }
         if (!nome || isNaN(nivel)) { alert('Preencha todos os campos.'); return; }
 
         dadosRios.push({ id: Date.now() + Math.random(), data, nome, nivel });
@@ -2711,41 +2717,66 @@
     }
 
     function renderInfoUltimaRegua(rioSel) {
-        const painel = document.getElementById('infoUltimaRegua');
-        const texto = document.getElementById('textoUltimaRegua');
+        const painel   = document.getElementById('infoUltimaRegua');
+        const texto    = document.getElementById('textoUltimaRegua');
+        const seletorContainer = document.getElementById('seletorClimaContainer');
+        const seletorAno       = document.getElementById('seletorAnoClima');
+        const textoEvento      = document.getElementById('textoEventoClima');
         if (!painel || !texto) return;
 
         const resumo = getResumoUltimaRegua(rioSel);
         if (!resumo) {
             painel.style.display = 'none';
             texto.textContent = '';
+            if (seletorContainer) seletorContainer.classList.add('hidden');
+            if (textoEvento) textoEvento.innerHTML = '';
             return;
         }
 
         const { ultimo, maisProximo } = resumo;
-        const anoCorrente = new Date().getFullYear();
 
-        const primeiraLinha = `Última atualização da régua: <strong>${formatNivel(ultimo.nivel)} m</strong> em <strong>${formatDate(ultimo.data)}</strong>.`;
-        const segundaLinha = maisProximo
-            ? `Este nível está mais próximo da média histórica de <strong>${maisProximo.ano}</strong>, que foi de <strong>${formatNivel(maisProximo.nivel)} m</strong> na mesma data.`
-            : 'Não há histórico em outros anos para a mesma data.';
+        texto.innerHTML = `Última atualização da régua: <strong>${formatNivel(ultimo.nivel)} m</strong> em <strong>${formatDate(ultimo.data)}</strong>.<br>`
+            + (maisProximo
+                ? `Este nível está mais próximo da média histórica de <strong>${maisProximo.ano}</strong>, que foi de <strong>${formatNivel(maisProximo.nivel)} m</strong> na mesma data.`
+                : 'Não há histórico em outros anos para a mesma data.');
 
-        let htmlClima = '';
-        if (eventosClimaticos.length) {
-            const anoRef = maisProximo ? maisProximo.ano : null;
-            const evHistorico = anoRef ? eventosClimaticos.find(e => e.ano === anoRef) : null;
-            const evCorrente  = eventosClimaticos.find(e => e.ano === anoCorrente);
+        const anosComEventos = [...new Set(eventosClimaticos.map(e => e.ano))].sort((a, b) => b - a);
 
-            if (evHistorico) {
-                htmlClima += `<br><br>Em <strong>${maisProximo.ano}</strong>, o Histórico de Eventos Climáticos foi:<br><span style="white-space:pre-wrap">${evHistorico.evento}</span>`;
+        if (anosComEventos.length && seletorAno && seletorContainer) {
+            seletorAno.innerHTML = anosComEventos.map(a => `<option value="${a}">${a}</option>`).join('');
+            let defaultAno = maisProximo ? maisProximo.ano : new Date().getFullYear();
+            if (!anosComEventos.includes(defaultAno)) {
+                defaultAno = anosComEventos.reduce((closest, a) =>
+                    Math.abs(a - defaultAno) < Math.abs(closest - defaultAno) ? a : closest);
             }
-            if (evCorrente) {
-                htmlClima += `<br><br>Para este ano, o cenário esperado é:<br><span style="white-space:pre-wrap">${evCorrente.evento}</span>`;
-            }
+            seletorAno.value = defaultAno;
+            seletorContainer.classList.remove('hidden');
+        } else if (seletorContainer) {
+            seletorContainer.classList.add('hidden');
         }
 
-        texto.innerHTML = `${primeiraLinha}<br>${segundaLinha}${htmlClima}`;
+        atualizarEventoClima();
         painel.style.display = '';
+    }
+
+    function atualizarEventoClima() {
+        const seletorAno  = document.getElementById('seletorAnoClima');
+        const textoEvento = document.getElementById('textoEventoClima');
+        if (!seletorAno || !textoEvento) return;
+
+        const anoSel     = parseInt(seletorAno.value);
+        const anoCorrente = new Date().getFullYear();
+        const evSel      = eventosClimaticos.find(e => e.ano === anoSel);
+        const evCorrente = eventosClimaticos.find(e => e.ano === anoCorrente);
+
+        let html = '';
+        if (evSel) {
+            html += `<br>Em <strong>${anoSel}</strong>, o Histórico de Eventos Climáticos foi:<br><span style="white-space:pre-wrap">${evSel.evento}</span>`;
+        }
+        if (evCorrente && evCorrente.ano !== anoSel) {
+            html += `${html ? '<br><br>' : '<br>'}Para este ano, o cenário esperado é:<br><span style="white-space:pre-wrap">${evCorrente.evento}</span>`;
+        }
+        textoEvento.innerHTML = html;
     }
 
     function renderCenariosRioToggle() {
