@@ -389,6 +389,17 @@
                             <button onclick="clearRioData()" class="text-red-600 hover:text-red-800 text-sm">Limpar</button>
                         </div>
                     </div>
+                    <div class="flex flex-wrap items-end gap-3 mb-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 mb-1">De</label>
+                            <input type="date" id="filtroDataIni" class="input-field text-sm" style="width:auto" onchange="renderTabelaRios()">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Até</label>
+                            <input type="date" id="filtroDataFim" class="input-field text-sm" style="width:auto" onchange="renderTabelaRios()">
+                        </div>
+                        <button onclick="limparBuscaData()" class="text-blue-600 hover:text-blue-800 text-sm pb-2">Limpar busca</button>
+                    </div>
                     <div class="table-container max-h-64 overflow-y-auto">
                         <table id="tabelaRios">
                             <thead><tr><th>Data</th><th>Rio</th><th>Nível (m)</th><th>Ações</th></tr></thead>
@@ -794,10 +805,11 @@
     <div id="modalRio" class="modal">
         <div class="modal-content p-6">
             <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-semibold">Adicionar Medição de Rio</h3>
+                <h3 id="modalRioTitle" class="text-lg font-semibold">Adicionar Medição de Rio</h3>
                 <button onclick="closeModal('rio')" class="text-gray-400 hover:text-gray-600"><i data-lucide="x" class="w-5 h-5"></i></button>
             </div>
             <div class="space-y-4">
+                <input type="hidden" id="rioId">
                 <div><label class="block text-sm font-medium text-gray-700 mb-1">Data</label>
                     <div class="relative">
                         <input type="text" id="rioData" class="input-field pr-9" placeholder="DD/MM/AAAA" maxlength="10" oninput="formatarDataInput(this)" autocomplete="off">
@@ -1873,10 +1885,12 @@
         const dd   = String(hoje.getDate()).padStart(2,'0');
         const mm   = String(hoje.getMonth()+1).padStart(2,'0');
         const yyyy = hoje.getFullYear();
+        document.getElementById('rioId').value    = '';
         document.getElementById('rioData').value  = `${dd}/${mm}/${yyyy}`;
         const lastRio = dadosRios.length ? dadosRios.reduce((a, b) => a.id > b.id ? a : b) : null;
         document.getElementById('rioNome').value  = lastRio?.nome || '';
         document.getElementById('rioNivel').value = '';
+        document.getElementById('modalRioTitle').textContent = 'Adicionar Medição de Rio';
         document.getElementById('modalRio').classList.add('active');
         lucide.createIcons();
     }
@@ -1948,6 +1962,7 @@
     // ── Fim do mini calendário ─────────────────────────────────────────────
 
     function saveRio() {
+        const id      = document.getElementById('rioId').value;
         const dataRaw = document.getElementById('rioData').value.trim();
         const nome    = document.getElementById('rioNome').value.trim();
         const nivel   = parseNivel(document.getElementById('rioNivel').value);
@@ -1957,13 +1972,36 @@
         if (isNaN(new Date(data + 'T12:00:00').getTime())) { alert('Data inválida.'); return; }
         if (!nome || isNaN(nivel)) { alert('Preencha todos os campos.'); return; }
 
-        dadosRios.push({ id: Date.now() + Math.random(), data, nome, nivel });
+        if (id) {
+            const rio = dadosRios.find(r => r.id == id);
+            if (rio) { rio.data = data; rio.nome = nome; rio.nivel = nivel; }
+        } else {
+            dadosRios.push({ id: Date.now() + Math.random(), data, nome, nivel });
+        }
         invalidarCacheProjecao();
         saveToLocalStorage();
         updateFiltroRio();
         renderTabelaRios();
         updateRioChart();
         closeModal('rio');
+    }
+
+    function openEditRioModal(id) {
+        const rio = dadosRios.find(r => r.id == id);
+        if (!rio) return;
+        document.getElementById('rioId').value    = id;
+        document.getElementById('rioData').value  = formatDate(rio.data);
+        document.getElementById('rioNome').value  = rio.nome;
+        document.getElementById('rioNivel').value = rio.nivel;
+        document.getElementById('modalRioTitle').textContent = 'Editar Medição de Rio';
+        document.getElementById('modalRio').classList.add('active');
+        lucide.createIcons();
+    }
+
+    function limparBuscaData() {
+        document.getElementById('filtroDataIni').value = '';
+        document.getElementById('filtroDataFim').value = '';
+        renderTabelaRios();
     }
 
     function deleteRio(id) {
@@ -2123,22 +2161,38 @@
     function renderTabelaRios() {
         const tbody = document.getElementById('tbodyRios');
         tbody.innerHTML = '';
-        const filtro = document.getElementById('filtroRio').value;
+        const filtro  = document.getElementById('filtroRio').value;
+        const dataIni = document.getElementById('filtroDataIni').value;
+        const dataFim = document.getElementById('filtroDataFim').value;
 
-        const list = dadosRios.filter(r => !filtro || r.nome === filtro);
+        let list = dadosRios.filter(r => !filtro || r.nome === filtro);
+        if (dataIni) list = list.filter(r => r.data >= dataIni);
+        if (dataFim) list = list.filter(r => r.data <= dataFim);
         const sorted = [...list].sort((a,b) => new Date(b.data) - new Date(a.data));
 
-        sorted.slice(0, 100).forEach(rio => {
+        const temBuscaData = !!(dataIni || dataFim);
+        const limite = temBuscaData ? sorted.length : 100;
+        sorted.slice(0, limite).forEach(rio => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>${formatDate(rio.data)}</td>
                 <td>${rio.nome}</td>
                 <td>${rio.nivel.toFixed(2)}</td>
-                <td><button onclick="deleteRio(${rio.id})" class="text-red-600 hover:text-red-800"><i data-lucide="trash-2" class="w-4 h-4"></i></button></td>
+                <td>
+                    <div class="flex gap-2">
+                        <button onclick="openEditRioModal(${rio.id})" class="text-blue-600 hover:text-blue-800" title="Editar"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+                        <button onclick="deleteRio(${rio.id})" class="text-red-600 hover:text-red-800" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                    </div>
+                </td>
             `;
             tbody.appendChild(tr);
         });
-        document.getElementById('rioCount').textContent = `${list.length} registros${filtro ? ' (filtrados)' : ''}`;
+        const partes = [];
+        if (filtro) partes.push('rio');
+        if (temBuscaData) partes.push('data');
+        const sufixo = partes.length ? ` (filtrados por ${partes.join(' e ')})` : '';
+        const limitados = (!temBuscaData && list.length > 100) ? ' — exibindo os 100 mais recentes' : '';
+        document.getElementById('rioCount').textContent = `${list.length} registros${sufixo}${limitados}`;
         lucide.createIcons();
     }
 
