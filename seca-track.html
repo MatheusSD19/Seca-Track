@@ -5226,6 +5226,16 @@
                     info.det.volumeTotal = volNovo;
                 });
             }
+
+            // Rotas que ficaram sem horas: informa em qual(is) rota(s) o empurrador foi alocado
+            const rotasComHoras = infos.filter(i => i.det.viagens >= 0.001).map(i => i.nomeRota);
+            if (rotasComHoras.length > 0) {
+                infos.forEach(info => {
+                    if (info.det.viagens < 0.001) {
+                        info.det.motivo = `Empurrador alocado na rota: ${rotasComHoras.join(', ')}`;
+                    }
+                });
+            }
         });
 
         // Rateio de pulmão: o volume entregue ao pulmão precisa ser distribuído entre as
