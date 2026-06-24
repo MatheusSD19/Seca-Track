@@ -97,6 +97,11 @@ Aba dedicada a compor o e-mail/relatório de atualização de previsão de calad
   - Aderência de volume: Cap. Simulada × Vol. Landing × Vol. Budget por mês/cenário (Landing editável; Budget vem das metas de Rotas & Metas)
   - Calado operacional: média e mínima de régua, calado e volume por barcaça (mês/cenário)
 - **Exportação/cópia:** copiar com gráficos (rich text/HTML), copiar somente texto, exportar PDF (impressão) e baixar HTML standalone
+- **Ano de referência:** seletor de ano-base (Nível dos Rios e Resumo) que permite projetar/visualizar anos futuros (ex.: ainda em 2026, analisar o que se espera para 2027). Sem mudança de código na virada do ano.
+
+### Horizonte de simulação (multi-ano)
+
+A série diária de nível é gerada para a janela `[ano-base .. ano-base + 1]`. Isso garante que **restrições de navegação que atravessam a virada do ano resolvam a data de retorno correta** (e não fiquem presas em 31/12 → retorno 01/01). A seca do ano seguinte não entra como nova linha no relatório do ano-base: a janela estendida serve apenas para fechar os retornos. As âncoras mensais de projeção vêm de uma fonte única (`getNivelRioCenarioAnoMes`), válida para qualquer ano.
 
 ## Tecnologias
 

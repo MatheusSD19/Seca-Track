@@ -171,6 +171,10 @@
                             <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-blue-500"></span>Médio</span>
                             <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-red-500"></span>Pessimista</span>
                         </div>
+                        <label class="flex items-center gap-1 text-xs text-gray-500" title="Ano-base da simulação. Permite projetar e visualizar anos futuros (ex.: 2027).">
+                            <span>Ano:</span>
+                            <select id="anoBaseRios" class="input-field text-xs py-1" style="width:auto" onchange="setAnoBase(this.value)"></select>
+                        </label>
                         <button onclick="exportarProjecaoCSV()" class="btn-secondary text-xs flex items-center gap-1 py-1" title="Exportar dados do gráfico para Excel (CSV)">
                             <i data-lucide="table-2" class="w-3 h-3"></i> Exportar CSV
                         </button>
@@ -843,6 +847,10 @@
                         <div>
                             <label class="block text-xs font-medium text-gray-500 mb-1">Rio</label>
                             <select id="resumoRioSelect" class="input-field text-sm" style="width:auto;min-width:160px" onchange="renderResumo()"></select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Ano de referência</label>
+                            <select id="resumoAnoBase" class="input-field text-sm" style="width:auto" onchange="setAnoBase(this.value)"></select>
                         </div>
                         <div>
                             <label class="block text-xs font-medium text-gray-500 mb-1">Saudação</label>
@@ -2627,26 +2635,26 @@
             return;
         }
 
-        const anoAtual = new Date().getFullYear();
+        const anoBase = getAnoBase();
 
-        // Gera labels e datas diárias para o ano inteiro
+        // Gera labels e datas diárias para o ano-base inteiro
         const dailyLabels = [];
         const dailyDates  = [];
         const dailyMonths = [];
         for (let m = 0; m < 12; m++) {
-            const diasMes = new Date(anoAtual, m + 1, 0).getDate();
+            const diasMes = new Date(anoBase, m + 1, 0).getDate();
             for (let d = 1; d <= diasMes; d++) {
-                dailyDates.push(new Date(anoAtual, m, d));
+                dailyDates.push(new Date(anoBase, m, d));
                 dailyLabels.push(`${String(d).padStart(2,'0')}/${String(m+1).padStart(2,'0')}`);
                 dailyMonths.push(m);
             }
         }
 
-        // Medições reais do ano atual agrupadas por data (chave YYYY-MM-DD)
+        // Medições reais do ano-base agrupadas por data (chave YYYY-MM-DD)
         const porData = {};
         dadosRios.filter(r => r.nome === rioSel).forEach(r => {
             const d = new Date(r.data + 'T12:00:00');
-            if (d.getFullYear() !== anoAtual || isNaN(d.getTime())) return;
+            if (d.getFullYear() !== anoBase || isNaN(d.getTime())) return;
             const k = r.data.substring(0, 10);
             if (!porData[k]) porData[k] = [];
             porData[k].push(r.nivel);
@@ -2772,6 +2780,7 @@
         renderCenariosRioToggle();
         atualizarBotoesAnosHistoricos(rioSel);
         renderInfoUltimaRegua(rioSel);
+        syncAnoBaseSelectors();
 
         // Linhas de calado mínimo dos ativos visíveis
         let corIdx = 0;
@@ -2809,7 +2818,7 @@
                 responsive:true, maintainAspectRatio:false,
                 interaction:{ intersect:false, mode:'index' },
                 plugins:{
-                    title:{ display:true, text: `Projeção: ${rioSel}` },
+                    title:{ display:true, text: `Projeção: ${rioSel} — ${anoBase}` },
                     legend:{ display:false },
                     tooltip:{
                         callbacks:{
@@ -3059,16 +3068,53 @@
     }
 
     // Gera série diária de nível do rio: dados reais (histórico) + interpolação linear (projeção)
-    function gerarSerieDiariaRio(rioSel, cenario, proj) {
-        const anoAtual = new Date().getFullYear();
+    // A série cobre [anoBase .. anoBase + SIM_HORIZONTE_EXTRA_ANOS] para que restrições que
+    // atravessam a virada do ano resolvam o retorno na data correta (e não no dia 01/01).
+    const SIM_HORIZONTE_EXTRA_ANOS = 1;
 
-        // Medições reais do ano atual agrupadas por data (média diária)
+    function getAnoBase() {
+        const real = new Date().getFullYear();
+        const ov = variaveis && variaveis.anoBaseOverride;
+        return (Number.isFinite(ov) && ov >= real) ? ov : real;
+    }
+    function getAnosBaseDisponiveis() {
+        const real = new Date().getFullYear();
+        return Array.from({ length: 6 }, (_, i) => real + i);
+    }
+    function syncAnoBaseSelectors() {
+        const anos = getAnosBaseDisponiveis();
+        const cur = getAnoBase();
+        ['anoBaseRios', 'resumoAnoBase'].forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.innerHTML = anos.map(a => `<option value="${a}">${a}</option>`).join('');
+            el.value = String(cur);
+        });
+    }
+    function setAnoBase(val) {
+        const real = new Date().getFullYear();
+        const y = parseInt(val);
+        variaveis.anoBaseOverride = (Number.isFinite(y) && y > real) ? y : null;
+        saveToLocalStorage();
+        syncAnoBaseSelectors();
+        updateRioChart();
+        if (!document.getElementById('content-resumo').classList.contains('hidden')) renderResumo();
+    }
+
+    function gerarSerieDiariaRio(rioSel, cenario, proj, opts) {
+        opts = opts || {};
+        const anoBase = opts.anoBase != null ? opts.anoBase : getAnoBase();
+        const anoFim  = opts.anoFim  != null ? opts.anoFim  : anoBase + SIM_HORIZONTE_EXTRA_ANOS;
+
+        // Medições reais dentro da janela [anoBase, anoFim] agrupadas por data (média diária)
         const porData = {};
         dadosRios
             .filter(r => r.nome === rioSel)
             .forEach(r => {
                 const d = new Date(r.data + 'T12:00:00');
-                if (d.getFullYear() !== anoAtual || isNaN(d.getTime())) return;
+                if (isNaN(d.getTime())) return;
+                const y = d.getFullYear();
+                if (y < anoBase || y > anoFim) return;
                 const k = r.data.substring(0, 10);
                 if (!porData[k]) porData[k] = [];
                 porData[k].push(r.nivel);
@@ -3079,36 +3125,39 @@
             .map(([k, vals]) => ({ ms: new Date(k + 'T12:00:00').getTime(), nivel: vals.reduce((a,b) => a+b, 0) / vals.length }))
             .sort((a, b) => a.ms - b.ms);
 
-        // Âncoras de projeção mensal (dia 15 de cada mês futuro)
-        const lastHistMs = anchors.length ? anchors[anchors.length - 1].ms : 0;
-        proj.mesesIdx.forEach((mes, i) => {
-            let nivel;
-            if (cenario === 'pessimista') nivel = proj.pessimista[i];
-            else if (cenario === 'medio') nivel = proj.medio[i];
-            else if (cenario === 'otimista') nivel = proj.otimista[i];
-            else nivel = (proj.custom[cenario] || [])[i];
-            if (nivel === null || nivel === undefined) return;
-            const ms = new Date(anoAtual, mes, 15, 12).getTime();
-            if (ms > lastHistMs) anchors.push({ ms, nivel });
-        });
+        const lastHistMs = anchors.length ? anchors[anchors.length - 1].ms : (new Date(anoBase, 0, 1, 12).getTime() - 1);
+
+        // Âncoras de projeção mensal (dia 15) para todos os meses futuros da janela.
+        // Usa getNivelRioCenarioAnoMes — a fonte única de projeção, válida para qualquer ano.
+        for (let y = anoBase; y <= anoFim; y++) {
+            for (let m = 0; m < 12; m++) {
+                const ms = new Date(y, m, 15, 12).getTime();
+                if (ms <= lastHistMs) continue;
+                const nivel = getNivelRioCenarioAnoMes(rioSel, y, m, cenario);
+                if (nivel === null || nivel === undefined) continue;
+                anchors.push({ ms, nivel });
+            }
+        }
         anchors.sort((a, b) => a.ms - b.ms);
         if (anchors.length < 1) return [];
 
-        // Interpola para cada dia do ano
+        // Interpola para cada dia da janela
         const serie = [];
-        for (let m = 0; m < 12; m++) {
-            const diasMes = new Date(anoAtual, m + 1, 0).getDate();
-            for (let d = 1; d <= diasMes; d++) {
-                const ms = new Date(anoAtual, m, d, 12).getTime();
-                let prev = null, next = null;
-                for (let j = anchors.length - 1; j >= 0; j--) { if (anchors[j].ms <= ms) { prev = anchors[j]; break; } }
-                for (let j = 0; j < anchors.length; j++)       { if (anchors[j].ms  > ms) { next = anchors[j]; break; } }
-                if (!prev && !next) continue;
-                let nivel;
-                if (!prev) nivel = next.nivel;
-                else if (!next) nivel = prev.nivel;
-                else nivel = prev.nivel + (ms - prev.ms) / (next.ms - prev.ms) * (next.nivel - prev.nivel);
-                serie.push({ date: new Date(anoAtual, m, d), nivel: Math.max(0, nivel) });
+        for (let y = anoBase; y <= anoFim; y++) {
+            for (let m = 0; m < 12; m++) {
+                const diasMes = new Date(y, m + 1, 0).getDate();
+                for (let d = 1; d <= diasMes; d++) {
+                    const ms = new Date(y, m, d, 12).getTime();
+                    let prev = null, next = null;
+                    for (let j = anchors.length - 1; j >= 0; j--) { if (anchors[j].ms <= ms) { prev = anchors[j]; break; } }
+                    for (let j = 0; j < anchors.length; j++)       { if (anchors[j].ms  > ms) { next = anchors[j]; break; } }
+                    if (!prev && !next) continue;
+                    let nivel;
+                    if (!prev) nivel = next.nivel;
+                    else if (!next) nivel = prev.nivel;
+                    else nivel = prev.nivel + (ms - prev.ms) / (next.ms - prev.ms) * (next.nivel - prev.nivel);
+                    serie.push({ date: new Date(y, m, d), nivel: Math.max(0, nivel) });
+                }
             }
         }
         return serie;
@@ -3200,7 +3249,10 @@
             });
         });
 
-        return resultados;
+        // Mantém apenas restrições que se iniciam no ano-base (a janela estendida serve só
+        // para resolver o retorno; a seca do ano seguinte não entra como nova linha).
+        const anoBase = getAnoBase();
+        return resultados.filter(r => r.inicio.getFullYear() === anoBase);
     }
 
     // ── Controles de filtro ──
@@ -3461,7 +3513,7 @@
 
     function fmtT(n) { return Math.round(n || 0).toLocaleString('pt-BR'); }
     function mesAnoCurto(m) {
-        const ano = new Date().getFullYear();
+        const ano = getAnoBase();
         return `${MESES[m].toLowerCase()}/${String(ano).slice(2)}`;
     }
     function setResumoLanding(mes, val) {
@@ -3562,6 +3614,7 @@
     function calcResumoParadas(rioSel, proj) {
         const empAtivos  = empurradores.filter(e => e.ativo !== false);
         const barcAtivas = barcacas.filter(b => b.ativo !== false);
+        const anoBase = getAnoBase();
         const rows = [];
         RESUMO_CEN.forEach(cen => {
             const v = getVariaveisCenario(cen.id);
@@ -3569,7 +3622,9 @@
             if (!serie.length) return;
             const nivelByMs = new Map(serie.map(s => [s.date.getTime(), s.nivel]));
             const addRow = (label, tipo, nivelMin) => {
-                const periodos = encontrarPeriodosRestricao(serie, nivelMin);
+                // só restrições iniciadas no ano-base; a janela estendida resolve o retorno
+                const periodos = encontrarPeriodosRestricao(serie, nivelMin)
+                    .filter(p => p.inicio.getFullYear() === anoBase);
                 let parada = null, retorno = null, dias = 0, reguaSim = null;
                 if (periodos.length) {
                     parada  = periodos[0].inicio;
@@ -3666,6 +3721,7 @@
     // ── Calado operacional (Print 5) ──
     function calcResumoCalado(rioSel, proj, meses) {
         const ref = getReferenceBarcaca();
+        const anoBase = getAnoBase();
         const capCal = (c) => ref && ref.caladoMax ? Math.min(c, ref.caladoMax) : c;
         const out = [];
         RESUMO_CEN.forEach(cen => {
@@ -3673,7 +3729,7 @@
             const serie = gerarSerieDiariaRio(rioSel, cen.id, proj);
             if (!serie.length) return;
             const byMonth = {};
-            serie.forEach(s => { (byMonth[s.date.getMonth()] = byMonth[s.date.getMonth()] || []).push(s.nivel); });
+            serie.forEach(s => { if (s.date.getFullYear() !== anoBase) return; (byMonth[s.date.getMonth()] = byMonth[s.date.getMonth()] || []).push(s.nivel); });
             meses.forEach(m => {
                 const arr = byMonth[m];
                 if (!arr || !arr.length) return;
@@ -3694,6 +3750,7 @@
     // ── Orquestração / render ──
     function renderResumo() {
         popularResumoRioSelect();
+        syncAnoBaseSelectors();
         const doc = document.getElementById('resumoDoc');
         if (!doc) return;
         const rioSel = getResumoRioSel();
@@ -3707,14 +3764,15 @@
             return;
         }
 
-        const anoAtual = new Date().getFullYear();
-        const mesAtual = new Date().getMonth();
-        const meses = Array.from({ length: 12 - mesAtual }, (_, i) => mesAtual + i);
+        const anoBase = getAnoBase();
+        const ehAnoCorrente = anoBase === new Date().getFullYear();
+        const mesIni = ehAnoCorrente ? new Date().getMonth() : 0;
+        const meses = Array.from({ length: 12 - mesIni }, (_, i) => mesIni + i);
 
         const comp = analisarComportamentoRio(rioSel);
         const paradas = calcResumoParadas(rioSel, proj);
         const caladoStats = calcResumoCalado(rioSel, proj, meses);
-        const volume = calcResumoVolume(anoAtual, meses);
+        const volume = calcResumoVolume(anoBase, meses);
         const ref = getReferenceBarcaca();
 
         const dataRef = comp ? formatDateBR(comp.ultimo.d) : formatDateBR(new Date());
@@ -3834,13 +3892,13 @@
         const cv = document.getElementById('chartResumoComparada');
         if (!cv) return;
         if (chartResumoComparada) chartResumoComparada.destroy();
-        const anoAtual = new Date().getFullYear();
+        const anoBase = getAnoBase();
         const anos = [...new Set(dadosRios.filter(r => r.nome === rioSel)
             .map(r => new Date(r.data + 'T00:00:00').getFullYear()).filter(Number.isFinite))].sort((a, b) => a - b);
         const anosUsar = anos.slice(-4);
         const dailyDates = [], dailyLabels = [];
         for (let m = 0; m < 12; m++) {
-            const dm = new Date(anoAtual, m + 1, 0).getDate();
+            const dm = new Date(anoBase, m + 1, 0).getDate();
             for (let d = 1; d <= dm; d++) { dailyDates.push({ m, d }); dailyLabels.push(`${String(d).padStart(2,'0')}/${String(m+1).padStart(2,'0')}`); }
         }
         const cores = ['#16a34a', '#1e3a5f', '#2563eb', '#7c1d6f', '#b45309'];
@@ -3857,7 +3915,7 @@
                 return a ? a.reduce((x, y) => x + y, 0) / a.length : null;
             });
             return { label: String(ano), data, borderColor: cores[i % cores.length], backgroundColor: cores[i % cores.length],
-                borderWidth: ano === anoAtual ? 2.5 : 1.5, pointRadius: 0, spanGaps: true, tension: 0.2, fill: false };
+                borderWidth: ano === anoBase ? 2.5 : 1.5, pointRadius: 0, spanGaps: true, tension: 0.2, fill: false };
         });
         chartResumoComparada = new Chart(cv.getContext('2d'), {
             type: 'line', data: { labels: dailyLabels, datasets },
@@ -3873,17 +3931,17 @@
         const cv = document.getElementById('chartResumoSimulacao');
         if (!cv) return;
         if (chartResumoSimulacao) chartResumoSimulacao.destroy();
-        const anoAtual = new Date().getFullYear();
+        const anoBase = getAnoBase();
         const dailyDates = [], dailyLabels = [];
         for (let m = 0; m < 12; m++) {
-            const dm = new Date(anoAtual, m + 1, 0).getDate();
-            for (let d = 1; d <= dm; d++) { dailyDates.push(new Date(anoAtual, m, d)); dailyLabels.push(`${String(d).padStart(2,'0')}/${String(m+1).padStart(2,'0')}`); }
+            const dm = new Date(anoBase, m + 1, 0).getDate();
+            for (let d = 1; d <= dm; d++) { dailyDates.push(new Date(anoBase, m, d)); dailyLabels.push(`${String(d).padStart(2,'0')}/${String(m+1).padStart(2,'0')}`); }
         }
         const fmt = dt => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
         const porData = {};
         dadosRios.filter(r => r.nome === rioSel).forEach(r => {
             const dt = new Date(r.data + 'T12:00:00');
-            if (dt.getFullYear() !== anoAtual || isNaN(dt)) return;
+            if (dt.getFullYear() !== anoBase || isNaN(dt)) return;
             (porData[r.data.substring(0,10)] = porData[r.data.substring(0,10)] || []).push(r.nivel);
         });
         const histData = dailyDates.map(dt => { const a = porData[fmt(dt)]; return a ? a.reduce((x, y) => x + y, 0) / a.length : null; });
@@ -3910,7 +3968,7 @@
         chartResumoSimulacao = new Chart(cv.getContext('2d'), {
             type: 'line', data: { labels: dailyLabels, datasets },
             options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { intersect: false, mode: 'index' },
-                plugins: { title: { display: true, text: `Simulações ${resumoNomeRio(rioSel)} — ${anoAtual}` }, legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } } },
+                plugins: { title: { display: true, text: `Simulações ${resumoNomeRio(rioSel)} — ${anoBase}` }, legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } } },
                 scales: { x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: false,
                     callback: (v, i) => { const l = dailyLabels[i]; if (!l) return ''; const [dd, mm] = l.split('/'); return dd === '01' ? MESES[parseInt(mm)-1] : ''; } } },
                     y: { title: { display: true, text: 'Nível (m)' }, beginAtZero: true } } }
