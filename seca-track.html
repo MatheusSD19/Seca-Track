@@ -2783,14 +2783,14 @@
         syncAnoBaseSelectors();
 
         // Linhas de calado mínimo dos ativos visíveis
-        let corIdx = 0;
         const visiveis = variaveis.caladosVisiveis || {};
+        const caladoCorMap = getCaladoCorMap();
         const addCaladoLine = (key, nome, caladoMin) => {
             if (!visiveis[key]) return;
             const calMin = parseFloat(caladoMin);
             if (isNaN(calMin)) return;
             const nivelMin = calMin - variaveis.abaco + variaveis.faq;
-            const cor = CALADO_CORES[corIdx++ % CALADO_CORES.length];
+            const cor = caladoCorMap[key] || CALADO_CORES[0];
             datasets.push({
                 label: `${nome} (cal. op. mín. ${nivelMin.toFixed(2)} m)`,
                 data: dailyLabels.map(() => nivelMin),
@@ -4107,6 +4107,18 @@
         URL.revokeObjectURL(url);
     }
 
+    // Mapa estável de cor por ativo (mesma ordem usada nas linhas do gráfico),
+    // garantindo que cada botão use a cor da linha que ele plota.
+    function getCaladoCorMap() {
+        const ordem = [
+            ...empurradores.filter(e => e.ativo !== false).map(e => 'e-' + e.id),
+            ...barcacas.filter(b => b.ativo !== false).map(b => 'b-' + b.id)
+        ];
+        const map = {};
+        ordem.forEach((key, i) => { map[key] = CALADO_CORES[i % CALADO_CORES.length]; });
+        return map;
+    }
+
     function renderCaladosToggle() {
         const painel = document.getElementById('painelCalados');
         const container = document.getElementById('botoesCalados');
@@ -4121,13 +4133,16 @@
         painel.style.display = '';
 
         const visiveis = variaveis.caladosVisiveis || {};
+        const corMap = getCaladoCorMap();
         container.innerHTML = ativos.map(a => {
             const ativo = !!visiveis[a.key];
-            const cls = ativo
-                ? 'text-xs px-2 py-1 rounded-full border font-medium cursor-pointer transition-all bg-purple-100 border-purple-400 text-purple-700'
-                : 'text-xs px-2 py-1 rounded-full border font-medium cursor-pointer transition-all bg-gray-100 border-gray-300 text-gray-500';
+            const cor = corMap[a.key] || CALADO_CORES[0];
+            const style = ativo
+                ? `background-color:${cor}1a;border-color:${cor};color:${cor}`
+                : `background-color:transparent;border-color:${cor};color:${cor};opacity:0.55`;
+            const cls = 'text-xs px-2 py-1 rounded-full border font-medium cursor-pointer transition-all';
             const caladoOpMin = (a.calado + variaveis.abaco - variaveis.faq).toFixed(2);
-            return `<button class="${cls}" onclick="toggleCalado('${a.key}')" title="${a.grupo}: ${a.nome} — cal. op. mín. ${caladoOpMin} m">${a.nome}</button>`;
+            return `<button class="${cls}" style="${style}" onclick="toggleCalado('${a.key}')" title="${a.grupo}: ${a.nome} — cal. op. mín. ${caladoOpMin} m">${a.nome}</button>`;
         }).join('');
         lucide.createIcons();
     }
