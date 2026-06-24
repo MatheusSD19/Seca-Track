@@ -15,6 +15,7 @@ O sistema integra projeções de nível de rios com cálculo de capacidade da fr
 | **Rotas & Metas** | Configuração de rotas, cidades e cenários de rotas |
 | **Capacidade Frota** | Dashboard de KPIs, gráficos e tabelas de capacidade vs. meta |
 | **Custo Variável** | Cálculo automático de consumo de combustível e custo por rota |
+| **Resumo** | Relatório de previsão de calado exportável/copiável, com texto dinâmico, gráficos e tabelas que se atualizam a cada mudança de dados |
 
 ## Funcionalidades
 
@@ -80,6 +81,22 @@ O sistema integra projeções de nível de rios com cálculo de capacidade da fr
 - Gráfico de barras de consumo médio mensal (12 meses)
 - Três gráficos de pizza anuais: consumo por combustível, por empurrador e por rota
 - Tabela de consumo por rota com linhas expansíveis (mês → detalhamento por rota/empurrador): litros totais, tonelagem, L/Ton, R$/Ton e custo total (R$)
+
+### Resumo (relatório de previsão de calado)
+
+Aba dedicada a compor o e-mail/relatório de atualização de previsão de calado da hidrovia. Tudo é gerado a partir das simulações e **se atualiza automaticamente** a cada mudança de dados.
+
+- **Cabeçalho automático:** intervalo histórico considerado (primeira medição → última régua), FAQ, Ábaco, última régua observada e barcaça de referência
+- **Texto dinâmico:** as frases mudam conforme os resultados das simulações
+  - Comportamento do rio: data e nível do pico de cheia do ano, comparação do início da vazante com a média dos anos anteriores e ritmo recente de variação (cm/dia, subindo/baixando/estável)
+  - Cenários: descrição de cada cenário (médio, pessimista, otimista) a partir da configuração ativa
+  - Paradas: por cenário, início da redução de calado, início/retorno das paradas, embarcações afetadas e menor calado/volume no cenário pessimista
+- **Gráficos embutidos:** "Régua Comparada — Últimos Anos" (até 4 anos) e "Simulações — Ano" (réguas + 3 previsões + linhas de referência de calado mínimo)
+- **Tabelas:**
+  - Paradas por embarcação: Régua Mínima, Régua Simulada, Parada, Retorno, Dias Parado
+  - Aderência de volume: Cap. Simulada × Vol. Landing × Vol. Budget por mês/cenário (Landing editável; Budget vem das metas de Rotas & Metas)
+  - Calado operacional: média e mínima de régua, calado e volume por barcaça (mês/cenário)
+- **Exportação/cópia:** copiar com gráficos (rich text/HTML), copiar somente texto, exportar PDF (impressão) e baixar HTML standalone
 
 ## Tecnologias
 

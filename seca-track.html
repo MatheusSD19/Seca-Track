@@ -64,6 +64,35 @@
 
         .chip { display:inline-flex; align-items:center; gap:.25rem; padding:.2rem .5rem; background:#f3f4f6; border-radius:9999px; font-size:.72rem; color:#374151; }
         .chip.live { background:#dcfce7; color:#065f46; }
+
+        /* ===== Resumo (relatório exportável) ===== */
+        #resumoDoc { background:#fff; color:#1f2937; line-height:1.55; font-size:14px; }
+        #resumoDoc h1 { font-size:20px; font-weight:700; margin:0 0 4px; color:#0f172a; }
+        #resumoDoc h2 { font-size:15px; font-weight:700; margin:22px 0 8px; color:#0f172a; border-bottom:2px solid #e5e7eb; padding-bottom:4px; }
+        #resumoDoc p { margin:0 0 10px; }
+        #resumoDoc ul { margin:0 0 10px; padding-left:20px; }
+        #resumoDoc li { margin:2px 0; }
+        #resumoDoc table { width:100%; border-collapse:collapse; font-size:12px; margin:6px 0 4px; }
+        #resumoDoc th, #resumoDoc td { border:1px solid #d1d5db; padding:5px 8px; text-align:center; }
+        #resumoDoc th { background:#f1f5f9; font-weight:600; }
+        #resumoDoc td:first-child, #resumoDoc th:first-child { text-align:left; }
+        #resumoDoc tr:hover { background:transparent; }
+        #resumoDoc .resumo-img { width:100%; max-width:920px; border:1px solid #e5e7eb; border-radius:6px; margin:4px 0 12px; display:block; }
+        #resumoDoc .resumo-vars { background:#f8fafc; border:1px solid #e5e7eb; border-radius:6px; padding:10px 14px; font-size:13px; }
+        #resumoDoc .resumo-vars b { color:#0f172a; }
+        .row-pessimista { background:#fde8e8 !important; }
+        .row-medio      { background:#e3edf7 !important; }
+        .row-otimista   { background:#e3f4e7 !important; }
+        .resumo-foot { font-size:11px; color:#6b7280; margin-top:2px; }
+
+        @media print {
+            body * { visibility:hidden; }
+            #resumoDoc, #resumoDoc * { visibility:visible; }
+            #resumoDoc { position:absolute; left:0; top:0; width:100%; padding:0 6mm; }
+            .no-print { display:none !important; }
+            #resumoDoc h2 { page-break-after:avoid; }
+            #resumoDoc table, #resumoDoc .resumo-img { page-break-inside:avoid; }
+        }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -117,7 +146,10 @@
                 </button>
                 <button onclick="switchTab('custovariavel')" id="tab-custovariavel" class="py-4 text-sm font-medium text-gray-500 hover:text-gray-700 whitespace-nowrap">
                     <i data-lucide="fuel" class="w-4 h-4 inline mr-2"></i>Custo Variável (Beta)
-                </button> 
+                </button>
+                <button onclick="switchTab('resumo')" id="tab-resumo" class="py-4 text-sm font-medium text-gray-500 hover:text-gray-700 whitespace-nowrap">
+                    <i data-lucide="file-text" class="w-4 h-4 inline mr-2"></i>Resumo
+                </button>
             </nav>
         </div>
     </div>
@@ -275,6 +307,8 @@
                                 <th>Cenário</th>
                                 <th>Tipo</th>
                                 <th>Embarcação</th>
+                                <th>Régua Mín.</th>
+                                <th>Régua Sim.</th>
                                 <th>Início Restrição</th>
                                 <th>Retoma</th>
                                 <th>Dias corridos</th>
@@ -798,6 +832,49 @@
             </div>
 
             <div id="cenariosCustomDashboard" class="mt-2"></div>
+        </div>
+
+        <!-- MÓDULO 6: RESUMO (relatório exportável) -->
+        <div id="content-resumo" class="tab-content hidden">
+            <!-- Barra de ferramentas (não entra no relatório) -->
+            <div class="card p-4 mb-4 no-print">
+                <div class="flex flex-wrap items-end gap-4 justify-between">
+                    <div class="flex flex-wrap items-end gap-4">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Rio</label>
+                            <select id="resumoRioSelect" class="input-field text-sm" style="width:auto;min-width:160px" onchange="renderResumo()"></select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Saudação</label>
+                            <input id="resumoSaudacao" type="text" class="input-field text-sm" style="width:14rem" value="Bom dia a todos." oninput="renderResumo()">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Rio (nome no título)</label>
+                            <input id="resumoTituloRio" type="text" class="input-field text-sm" style="width:12rem" placeholder="(auto)" oninput="renderResumo()">
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="copiarResumo()" class="btn-primary text-sm flex items-center gap-1.5">
+                            <i data-lucide="copy" class="w-4 h-4"></i> Copiar (com gráficos)
+                        </button>
+                        <button onclick="copiarResumoTexto()" class="btn-secondary text-sm flex items-center gap-1.5">
+                            <i data-lucide="clipboard-type" class="w-4 h-4"></i> Copiar texto
+                        </button>
+                        <button onclick="exportarResumoPDF()" class="btn-secondary text-sm flex items-center gap-1.5">
+                            <i data-lucide="printer" class="w-4 h-4"></i> Exportar PDF
+                        </button>
+                        <button onclick="exportarResumoHTML()" class="btn-secondary text-sm flex items-center gap-1.5">
+                            <i data-lucide="download" class="w-4 h-4"></i> Baixar HTML
+                        </button>
+                    </div>
+                </div>
+                <p id="resumoCopyStatus" class="text-xs text-green-600 mt-2 hidden"></p>
+            </div>
+
+            <!-- Documento do relatório -->
+            <div class="card p-8">
+                <div id="resumoDoc"></div>
+            </div>
         </div>
     </main>
 
@@ -1375,6 +1452,8 @@
     let aderenciaCenarioSelecionado = null;
     let _pulmaoCache = []; // cache de dados de pulmão para o modal de detalhes
     let chartTempoParada = null;
+    let chartResumoComparada = null;
+    let chartResumoSimulacao = null;
     let consumos = [];
     let registrosConsumo = [];
     let chartCustoVariavel  = null;
@@ -1793,6 +1872,7 @@
         if (tab === 'dashboard')      updateDashboard();
         if (tab === 'rios')           updateRioChart();
         if (tab === 'custovariavel')  updateCustoVariavel();
+        if (tab === 'resumo')         renderResumo();
         saveToLocalStorage();
     }
 
@@ -1810,6 +1890,7 @@
         renderCaladosToggle();
         updateRioChart();
         if (!document.getElementById('content-dashboard').classList.contains('hidden')) updateDashboard();
+        if (!document.getElementById('content-resumo').classList.contains('hidden')) renderResumo();
     }
 
     // ==========================================================================
@@ -3073,6 +3154,8 @@
             const v = getVariaveisCenario(cen.id);
             const serie = gerarSerieDiariaRio(rioSel, cen.id, proj);
             if (!serie.length) return;
+            const nivelByMs = new Map(serie.map(s => [s.date.getTime(), s.nivel]));
+            const reguaEm = p => nivelByMs.get(p.inicio.getTime()) ?? null;
 
             empAtivos.forEach(emp => {
                 const nivelMin = emp.caladoMin - v.abaco + v.faq;
@@ -3081,7 +3164,7 @@
                         label: `${cen.nome} · ${emp.nome}`,
                         tipo: 'Empurrador', cenario: cen.nome, cenarioId: cen.id,
                         nome: emp.nome, cor: cen.cor,
-                        inicio: p.inicio, fim: p.fim, dias: p.dias, nivelMin
+                        inicio: p.inicio, fim: p.fim, dias: p.dias, nivelMin, reguaSim: reguaEm(p)
                     });
                 });
             });
@@ -3095,7 +3178,7 @@
                         label: `${cen.nome} · ${barc.nome}`,
                         tipo: 'Barcaça', cenario: cen.nome, cenarioId: cen.id,
                         nome: barc.nome, cor: cen.cor,
-                        inicio: p.inicio, fim: p.fim, dias: p.dias, nivelMin: nivelMinStop
+                        inicio: p.inicio, fim: p.fim, dias: p.dias, nivelMin: nivelMinStop, reguaSim: reguaEm(p)
                     });
                 });
 
@@ -3110,7 +3193,7 @@
                             label: `${cen.nome} · ${barc.nome} (reduz calado)`,
                             tipo: 'Barcaça (reduz calado)', cenario: cen.nome, cenarioId: cen.id,
                             nome: barc.nome, cor: cen.cor + '99',
-                            inicio: p.inicio, fim: p.fim, dias: p.dias, nivelMin: nivelMinReduz
+                            inicio: p.inicio, fim: p.fim, dias: p.dias, nivelMin: nivelMinReduz, reguaSim: reguaEm(p)
                         });
                     });
                 }
@@ -3333,14 +3416,594 @@
                         <td><span class="badge" style="background:${cb}22;color:${cb};border:1px solid ${cb}44">${d.cenario}</span></td>
                         <td class="text-xs text-gray-600">${d.tipo}</td>
                         <td class="font-medium">${d.nome}</td>
+                        <td class="text-gray-600">${formatNivel(d.nivelMin)} m</td>
+                        <td class="text-gray-600">${d.reguaSim !== null && d.reguaSim !== undefined ? formatNivel(d.reguaSim) + ' m' : '—'}</td>
                         <td>${formatDateShort(d.inicio)}</td>
                         <td>${formatDateShort(retoma)}</td>
                         <td class="font-bold text-orange-600">${d.dias}</td>
                     </tr>`;
                 }).join('')
-                : '<tr><td colspan="6" class="text-center text-gray-400 py-4">Nenhuma restrição projetada para a seleção atual.</td></tr>';
+                : '<tr><td colspan="8" class="text-center text-gray-400 py-4">Nenhuma restrição projetada para a seleção atual.</td></tr>';
         }
         lucide.createIcons();
+    }
+
+    // ==========================================================================
+    // MÓDULO 6: RESUMO — relatório exportável que compõe o e-mail de previsão
+    // ==========================================================================
+
+    function getResumoRioSel() {
+        const sel  = document.getElementById('resumoRioSelect');
+        const rios = [...new Set(dadosRios.map(r => r.nome))];
+        if (sel && sel.value && rios.includes(sel.value)) return sel.value;
+        return rios[0] || null;
+    }
+
+    function resumoNomeRio(rioSel) {
+        const ov = (document.getElementById('resumoTituloRio')?.value || '').trim();
+        return ov || rioSel || 'Rio';
+    }
+
+    function popularResumoRioSelect() {
+        const sel = document.getElementById('resumoRioSelect');
+        if (!sel) return;
+        const rios = [...new Set(dadosRios.map(r => r.nome))];
+        const prev = sel.value;
+        sel.innerHTML = rios.map(r => `<option value="${r}">${r}</option>`).join('');
+        if (rios.includes(prev)) sel.value = prev;
+    }
+
+    function getReferenceBarcaca() {
+        const at = barcacas.filter(b => b.ativo !== false);
+        if (!at.length) return null;
+        return at.slice().sort((a, b) => (b.volMax || b.volMin || 0) - (a.volMax || a.volMin || 0))[0];
+    }
+
+    function fmtT(n) { return Math.round(n || 0).toLocaleString('pt-BR'); }
+    function mesAnoCurto(m) {
+        const ano = new Date().getFullYear();
+        return `${MESES[m].toLowerCase()}/${String(ano).slice(2)}`;
+    }
+    function setResumoLanding(mes, val) {
+        variaveis.resumoLanding = variaveis.resumoLanding || {};
+        const v = parseFloat(String(val).replace(/\./g, '').replace(',', '.'));
+        if (Number.isFinite(v)) variaveis.resumoLanding[mes] = v; else delete variaveis.resumoLanding[mes];
+        saveToLocalStorage();
+        renderResumo();
+    }
+
+    const RESUMO_CEN = [
+        { id: 'pessimista', nome: 'Pessimista', cls: 'row-pessimista', cor: '#dc2626' },
+        { id: 'medio',      nome: 'Médio',      cls: 'row-medio',      cor: '#2563eb' },
+        { id: 'otimista',   nome: 'Otimista',   cls: 'row-otimista',   cor: '#16a34a' },
+    ];
+
+    // ── Comportamento recente do rio (narrativa dinâmica do Print 1) ──
+    function analisarComportamentoRio(rioSel) {
+        const anoAtual = new Date().getFullYear();
+        const dados = dadosRios.filter(r => r.nome === rioSel)
+            .map(r => ({ d: new Date(r.data + 'T00:00:00'), nivel: r.nivel }))
+            .filter(r => !isNaN(r.d) && Number.isFinite(r.nivel))
+            .sort((a, b) => a.d - b.d);
+        if (!dados.length) return null;
+        const doAno  = dados.filter(r => r.d.getFullYear() === anoAtual);
+        const ultimo = dados[dados.length - 1];
+        let pico = null;
+        doAno.forEach(r => { if (!pico || r.nivel > pico.nivel) pico = r; });
+        // taxa média dos últimos pontos do ano
+        const ultimos = doAno.slice(-8);
+        let taxaCmDia = null;
+        if (ultimos.length >= 2) {
+            const dias = (ultimos[ultimos.length - 1].d - ultimos[0].d) / 86400000;
+            if (dias > 0) taxaCmDia = ((ultimos[ultimos.length - 1].nivel - ultimos[0].nivel) / dias) * 100;
+        }
+        const picosAnt = {};
+        dados.filter(r => r.d.getFullYear() < anoAtual).forEach(r => {
+            const y = r.d.getFullYear();
+            if (!picosAnt[y] || r.nivel > picosAnt[y].nivel) picosAnt[y] = r;
+        });
+        const mesesPicoAnt = Object.values(picosAnt).map(p => p.d.getMonth());
+        const mesPicoMedioAnt = mesesPicoAnt.length
+            ? Math.round(mesesPicoAnt.reduce((a, b) => a + b, 0) / mesesPicoAnt.length) : null;
+        const intervaloIni = dados[0].d;
+        return { ultimo, pico, taxaCmDia, mesPicoMedioAnt, anoAtual, intervaloIni };
+    }
+
+    function textoComportamentoRio(a) {
+        if (!a) return '';
+        let t = '';
+        if (a.pico) {
+            t += `No gráfico abaixo, observa-se que em <b>${a.anoAtual}</b> o rio atingiu o pico de cheia em <b>${formatNivel(a.pico.nivel)} m</b> por volta de <b>${formatDateBR(a.pico.d)}</b>`;
+            if (a.mesPicoMedioAnt !== null) {
+                if (a.pico.d.getMonth() < a.mesPicoMedioAnt) {
+                    t += `, iniciando a vazante <b>mais cedo</b> que nos anos anteriores, quando o pico costumava ocorrer por volta de <b>${MESES_FULL[a.mesPicoMedioAnt]}</b>`;
+                } else if (a.pico.d.getMonth() > a.mesPicoMedioAnt) {
+                    t += `, iniciando a vazante <b>mais tarde</b> que a referência histórica (em torno de ${MESES_FULL[a.mesPicoMedioAnt]})`;
+                } else {
+                    t += `, em linha com o comportamento histórico (pico em torno de ${MESES_FULL[a.mesPicoMedioAnt]})`;
+                }
+            }
+            t += '. ';
+        }
+        if (a.taxaCmDia !== null) {
+            const abs = Math.abs(a.taxaCmDia);
+            if (a.taxaCmDia < -0.2) {
+                const ritmo = abs < 3 ? 'em nível moderado' : (abs < 8 ? 'em ritmo acelerado' : 'em ritmo intenso');
+                t += `Nos últimos registros o rio vem baixando ${ritmo}, com média de aproximadamente <b>-${abs.toFixed(0)} cm por dia</b>.`;
+            } else if (a.taxaCmDia > 0.2) {
+                t += `Nos últimos registros o rio voltou a <b>subir</b>, com média de aproximadamente <b>+${abs.toFixed(0)} cm por dia</b>.`;
+            } else {
+                t += `Nos últimos registros o rio se comportou de maneira <b>estável</b> (variação inferior a 0,2 cm/dia).`;
+            }
+        }
+        return t;
+    }
+
+    // ── Descrição dos cenários (Print 2) ──
+    function textoCenarios() {
+        const desc = (id) => {
+            const c = (variaveis.cenarios && variaveis.cenarios[id]) || {};
+            const tipo = c.tipo || 'desvio';
+            if (tipo === 'desvio') {
+                const m = c.multiplicadorStd ?? (id === 'otimista' ? 1 : id === 'pessimista' ? -1 : 0);
+                if (m === 0) return 'média histórica por mês com tendência linear';
+                return `média ${m > 0 ? '+' : '−'} ${Math.abs(m)} desvio-padrão`;
+            }
+            if (tipo === 'percentual') return `${c.percentual ?? 0}% sobre a média histórica`;
+            if (tipo === 'fixo' || tipo === 'manual') return 'níveis informados manualmente por mês';
+            return 'projeção estatística';
+        };
+        return `Nossas previsões consideram as variáveis acima para estimar o comportamento do rio em três cenários distintos: `
+            + `<b>médio</b> (${desc('medio')}), <b>pessimista</b> (${desc('pessimista')}) e <b>otimista</b> (${desc('otimista')}). `
+            + `Os cenários otimista e pessimista indicam o quão favorável/desfavorável a previsão é em relação ao cenário médio.`;
+    }
+
+    // ── Paradas por embarcação (Print 3) ──
+    function calcResumoParadas(rioSel, proj) {
+        const empAtivos  = empurradores.filter(e => e.ativo !== false);
+        const barcAtivas = barcacas.filter(b => b.ativo !== false);
+        const rows = [];
+        RESUMO_CEN.forEach(cen => {
+            const v = getVariaveisCenario(cen.id);
+            const serie = gerarSerieDiariaRio(rioSel, cen.id, proj);
+            if (!serie.length) return;
+            const nivelByMs = new Map(serie.map(s => [s.date.getTime(), s.nivel]));
+            const addRow = (label, tipo, nivelMin) => {
+                const periodos = encontrarPeriodosRestricao(serie, nivelMin);
+                let parada = null, retorno = null, dias = 0, reguaSim = null;
+                if (periodos.length) {
+                    parada  = periodos[0].inicio;
+                    retorno = new Date(periodos[periodos.length - 1].fim.getTime() + 86400000);
+                    dias    = periodos.reduce((s, p) => s + p.dias, 0);
+                    reguaSim = nivelByMs.get(parada.getTime());
+                }
+                rows.push({ cenarioId: cen.id, cenario: cen.nome, cls: cen.cls, embarcacao: label, tipo, reguaMin: nivelMin, reguaSim, parada, retorno, dias });
+            };
+            // redução de calado das barcaças (calado máx)
+            barcAtivas.forEach(b => { if (b.caladoMax) addRow('Red. ' + b.nome, 'Barcaça (redução)', b.caladoMax - v.abaco + v.faq); });
+            // empurradores
+            empAtivos.forEach(e => addRow(e.nome, 'Empurrador', e.caladoMin - v.abaco + v.faq));
+            // parada das barcaças (calado mín)
+            barcAtivas.forEach(b => addRow('Par. ' + b.nome, 'Barcaça (parada)', b.caladoMin - v.abaco + v.faq));
+        });
+        return rows;
+    }
+
+    function textoParadas(rows, caladoStats) {
+        if (!rows.length) return 'Nenhuma restrição de navegação projetada para os cenários atuais.';
+        const porCen = {};
+        rows.forEach(r => { (porCen[r.cenarioId] = porCen[r.cenarioId] || []).push(r); });
+        const frases = [];
+        RESUMO_CEN.forEach(cen => {
+            const lista = (porCen[cen.id] || []).filter(r => r.parada);
+            const reduz = lista.filter(r => r.tipo === 'Barcaça (redução)');
+            const param = lista.filter(r => r.tipo !== 'Barcaça (redução)');
+            if (!lista.length) {
+                frases.push(`No cenário <b>${cen.nome}</b>, não há redução de calado nem parada de embarcações projetada para o período.`);
+                return;
+            }
+            let f = `No cenário <b>${cen.nome}</b>, `;
+            if (reduz.length) {
+                const ini = reduz.reduce((a, b) => a.parada < b.parada ? a : b);
+                f += `a redução de calado das barcaças iniciaria por volta de <b>${formatDateBR(ini.parada)}</b>`;
+            } else {
+                f += 'não há redução significativa de calado das barcaças';
+            }
+            if (param.length) {
+                const iniP = param.reduce((a, b) => a.parada < b.parada ? a : b);
+                const retP = param.reduce((a, b) => a.retorno > b.retorno ? a : b);
+                const nomes = [...new Set(param.map(r => r.embarcacao))];
+                f += `, com parada de ${nomes.length === 1 ? 'embarcação' : 'embarcações'} (${nomes.join(', ')}) a partir de <b>${formatDateBR(iniP.parada)}</b> e retorno até <b>${formatDateBR(retP.retorno)}</b>`;
+            } else {
+                f += ', sem parada de nenhuma embarcação';
+            }
+            f += '.';
+            frases.push(f);
+        });
+        // menor calado/volume no pessimista
+        const minPess = caladoStats.filter(s => s.cenarioId === 'pessimista');
+        if (minPess.length) {
+            const pior = minPess.reduce((a, b) => a.menorCalado < b.menorCalado ? a : b);
+            frases.push(`No cenário <b>Pessimista</b>, o menor calado operacional estimado é de cerca de <b>${formatNivel(pior.menorCalado)} m</b>, equivalente a aproximadamente <b>${fmtT(pior.menorVol)} t</b> por barcaça.`);
+        }
+        return frases.join(' ');
+    }
+
+    // ── Aderência de volume (Print 4) ──
+    function calcResumoVolume(ano, meses) {
+        const rotasDoCenario = getRotasAtivasPorCenarioSelecionado();
+        const rotasDestino   = rotasDoCenario.filter(isRotaDestinoFinal);
+        if (!rotasDestino.length) return [];
+        const out = [];
+        for (const mes of meses) {
+            const demanda = calcularDemandaMensalPorRota(rotasDoCenario, mes);
+            let meta = 0;
+            rotasDestino.forEach(r => { meta += demanda.porRota[r.id] || 0; });
+            const caps = {};
+            for (const cen of ['otimista', 'medio', 'pessimista']) {
+                const nivelRioMap = {};
+                rotasDoCenario.forEach(rota => {
+                    const n = getNivelRioCenarioAnoMes(rota.rio, ano, mes, cen);
+                    if (n !== null && n !== undefined) nivelRioMap[rota.id] = n;
+                });
+                const { capacidades } = calcularCapacidadesAjustadas(rotasDoCenario, mes, ano, nivelRioMap, cen);
+                let tot = 0;
+                rotasDestino.forEach(rota => { if (rotaAtivaNoMes(rota, mes)) tot += capacidades[rota.id]?.total || 0; });
+                caps[cen] = tot;
+            }
+            out.push({ mes, meta, otimista: caps.otimista, medio: caps.medio, pessimista: caps.pessimista });
+        }
+        return out;
+    }
+
+    function aderColor(pct) {
+        if (pct >= 100) return '#16a34a';
+        if (pct >= 70)  return '#ca8a04';
+        return '#dc2626';
+    }
+    function aderIcon(pct) { return pct >= 100 ? '✓' : (pct >= 70 ? '⚠' : '✗'); }
+
+    // ── Calado operacional (Print 5) ──
+    function calcResumoCalado(rioSel, proj, meses) {
+        const ref = getReferenceBarcaca();
+        const capCal = (c) => ref && ref.caladoMax ? Math.min(c, ref.caladoMax) : c;
+        const out = [];
+        RESUMO_CEN.forEach(cen => {
+            const v = getVariaveisCenario(cen.id);
+            const serie = gerarSerieDiariaRio(rioSel, cen.id, proj);
+            if (!serie.length) return;
+            const byMonth = {};
+            serie.forEach(s => { (byMonth[s.date.getMonth()] = byMonth[s.date.getMonth()] || []).push(s.nivel); });
+            meses.forEach(m => {
+                const arr = byMonth[m];
+                if (!arr || !arr.length) return;
+                const mediaRegua = arr.reduce((a, b) => a + b, 0) / arr.length;
+                const menorRegua = Math.min(...arr);
+                const mediaCalado = capCal(mediaRegua + v.abaco - v.faq);
+                const menorCalado = capCal(menorRegua + v.abaco - v.faq);
+                out.push({
+                    cenarioId: cen.id, cenario: cen.nome, cls: cen.cls, mes: m,
+                    mediaRegua, mediaCalado, volMedia: ref ? calcularVolumeBarcaca(ref, mediaCalado) : 0,
+                    menorRegua, menorCalado, menorVol: ref ? calcularVolumeBarcaca(ref, menorCalado) : 0
+                });
+            });
+        });
+        return out;
+    }
+
+    // ── Orquestração / render ──
+    function renderResumo() {
+        popularResumoRioSelect();
+        const doc = document.getElementById('resumoDoc');
+        if (!doc) return;
+        const rioSel = getResumoRioSel();
+        if (!rioSel) {
+            doc.innerHTML = `<p style="color:#6b7280">Importe dados de nível de rio no módulo <b>Nível dos Rios</b> para gerar o resumo.</p>`;
+            return;
+        }
+        const proj = calcularProjecaoRio(rioSel);
+        if (!proj) {
+            doc.innerHTML = `<p style="color:#6b7280">Dados insuficientes para projeção de <b>${rioSel}</b> (mínimo 3 registros).</p>`;
+            return;
+        }
+
+        const anoAtual = new Date().getFullYear();
+        const mesAtual = new Date().getMonth();
+        const meses = Array.from({ length: 12 - mesAtual }, (_, i) => mesAtual + i);
+
+        const comp = analisarComportamentoRio(rioSel);
+        const paradas = calcResumoParadas(rioSel, proj);
+        const caladoStats = calcResumoCalado(rioSel, proj, meses);
+        const volume = calcResumoVolume(anoAtual, meses);
+        const ref = getReferenceBarcaca();
+
+        const dataRef = comp ? formatDateBR(comp.ultimo.d) : formatDateBR(new Date());
+        const intervalo = comp ? `${formatDateBR(comp.intervaloIni)} a ${dataRef}` : '—';
+        const saud = document.getElementById('resumoSaudacao')?.value || 'Bom dia a todos.';
+        const ultimoNivel = comp ? formatNivel(comp.ultimo.nivel) : '—';
+
+        // ── Tabela de paradas ──
+        let tParadas = `<table><thead><tr>
+            <th>Cenário</th><th>Embarcação</th><th>Régua Mínima (m)</th><th>Régua Simulada (m)</th>
+            <th>Parada</th><th>Retorno</th><th>Dias Parado</th></tr></thead><tbody>`;
+        paradas.forEach(r => {
+            tParadas += `<tr class="${r.cls}">
+                <td>${r.cenario}</td>
+                <td style="text-align:left">${r.embarcacao}</td>
+                <td>${formatNivel(r.reguaMin)}</td>
+                <td>${r.reguaSim !== null && r.reguaSim !== undefined ? formatNivel(r.reguaSim) : '—'}</td>
+                <td>${r.parada ? formatDateBR(r.parada) : '—'}</td>
+                <td>${r.retorno ? formatDateBR(r.retorno) : '—'}</td>
+                <td><b>${r.dias || '—'}</b></td></tr>`;
+        });
+        tParadas += '</tbody></table>';
+
+        // ── Tabela de aderência de volume ──
+        let tVolume;
+        if (!volume.length) {
+            tVolume = `<p class="resumo-foot">Cadastre rotas com destino final e metas de cidade (módulo <b>Rotas &amp; Metas</b>) para calcular a aderência de volume.</p>`;
+        } else {
+            tVolume = `<table><thead><tr>
+                <th>Mês</th><th>Cenário</th><th>Cap. Simulada (t)</th>
+                <th>Vol. Landing (t)</th><th>Aderência Landing</th>
+                <th>Vol. Budget (t)</th><th>Aderência Budget</th></tr></thead><tbody>`;
+            RESUMO_CEN.forEach(cen => {
+                volume.forEach(v => {
+                    const cap = v[cen.id];
+                    const budget  = v.meta;
+                    const landing = (variaveis.resumoLanding && variaveis.resumoLanding[v.mes] != null)
+                        ? variaveis.resumoLanding[v.mes] : budget;
+                    const adL = landing > 0 ? Math.round(cap / landing * 100) : 0;
+                    const adB = budget  > 0 ? Math.round(cap / budget  * 100) : 0;
+                    tVolume += `<tr class="${cen.cls}">
+                        <td style="text-align:left">${mesAnoCurto(v.mes)}</td>
+                        <td>${cen.nome}</td>
+                        <td>${fmtT(cap)}</td>
+                        <td><input type="text" value="${fmtT(landing)}" onchange="setResumoLanding(${v.mes}, this.value)"
+                             style="width:5.5rem;text-align:right;border:1px solid #d1d5db;border-radius:4px;padding:1px 4px;font-size:12px"></td>
+                        <td style="color:${aderColor(adL)};font-weight:600">${aderIcon(adL)} ${adL}%</td>
+                        <td>${fmtT(budget)}</td>
+                        <td style="color:${aderColor(adB)};font-weight:600">${aderIcon(adB)} ${adB}%</td></tr>`;
+                });
+            });
+            tVolume += '</tbody></table>';
+        }
+
+        // ── Tabela de calado operacional ──
+        let tCalado = `<table><thead><tr>
+            <th>Mês</th><th>Cenário</th>
+            <th>Média Régua (m)</th><th>Média Calado (m)</th><th>Vol. Médio (t)</th>
+            <th>Menor Régua (m)</th><th>Menor Calado (m)</th><th>Menor Vol. (t)</th></tr></thead><tbody>`;
+        caladoStats.forEach(s => {
+            tCalado += `<tr class="${s.cls}">
+                <td style="text-align:left">${mesAnoCurto(s.mes)}</td>
+                <td>${s.cenario}</td>
+                <td>${formatNivel(s.mediaRegua)}</td>
+                <td>${formatNivel(s.mediaCalado)}</td>
+                <td>${fmtT(s.volMedia)}</td>
+                <td>${formatNivel(s.menorRegua)}</td>
+                <td>${formatNivel(s.menorCalado)}</td>
+                <td>${fmtT(s.menorVol)}</td></tr>`;
+        });
+        tCalado += '</tbody></table>';
+
+        // ── Documento ──
+        doc.innerHTML = `
+            <h1>Atualização de Previsão de Calado — ${resumoNomeRio(rioSel)}</h1>
+            <p class="resumo-foot">Gerado em ${formatDateBR(new Date())} · última régua observada em ${dataRef}.</p>
+            <p>${saud}</p>
+            <p>Conforme as variáveis abaixo, segue a atualização de previsão de calado.</p>
+            <div class="resumo-vars">
+                <div>Intervalo histórico considerado: <b>${intervalo}</b></div>
+                <div>FAQ: <b>${formatNivel(variaveis.faq)} m</b></div>
+                <div>Ábaco: <b>+${formatNivel(variaveis.abaco)} m</b></div>
+                ${ref ? `<div>Barcaça de referência: <b>${ref.nome}</b> (calado ${formatNivel(ref.caladoMin)}–${formatNivel(ref.caladoMax)} m)</div>` : ''}
+                <div>Última régua: <b>${ultimoNivel} m</b> em ${dataRef}.</div>
+            </div>
+
+            <h2>1. Comportamento do rio</h2>
+            <p>${textoComportamentoRio(comp)}</p>
+            <div style="height:300px"><canvas id="chartResumoComparada"></canvas></div>
+
+            <h2>2. Cenários de previsão</h2>
+            <p>${textoCenarios()}</p>
+            <div style="height:320px"><canvas id="chartResumoSimulacao"></canvas></div>
+
+            <h2>3. Redução de calado e paradas de embarcações</h2>
+            <p>${textoParadas(paradas, caladoStats)}</p>
+            ${tParadas}
+
+            <h2>4. Aderência de volume</h2>
+            <p>Considerando o volume Landing, o volume Budget e a capacidade de movimentação da frota nos cenários simulados, a aderência de volume estimada é a seguinte:</p>
+            ${tVolume}
+            <p class="resumo-foot">Vol. Budget = metas cadastradas em Rotas &amp; Metas. Vol. Landing é editável (clique no campo); por padrão assume o mesmo valor do Budget.</p>
+
+            <h2>5. Calado operacional estimado</h2>
+            <p>No período de redução, o calado operacional e o volume por barcaça ficam estimados conforme abaixo (régua + ábaco − FAQ, limitado ao calado máximo da barcaça de referência).</p>
+            ${tCalado}
+
+            <p style="margin-top:18px">Quaisquer dúvidas, estou à disposição.</p>
+        `;
+
+        renderResumoChartComparada(rioSel);
+        renderResumoChartSimulacao(rioSel, proj);
+        lucide.createIcons();
+    }
+
+    function renderResumoChartComparada(rioSel) {
+        const cv = document.getElementById('chartResumoComparada');
+        if (!cv) return;
+        if (chartResumoComparada) chartResumoComparada.destroy();
+        const anoAtual = new Date().getFullYear();
+        const anos = [...new Set(dadosRios.filter(r => r.nome === rioSel)
+            .map(r => new Date(r.data + 'T00:00:00').getFullYear()).filter(Number.isFinite))].sort((a, b) => a - b);
+        const anosUsar = anos.slice(-4);
+        const dailyDates = [], dailyLabels = [];
+        for (let m = 0; m < 12; m++) {
+            const dm = new Date(anoAtual, m + 1, 0).getDate();
+            for (let d = 1; d <= dm; d++) { dailyDates.push({ m, d }); dailyLabels.push(`${String(d).padStart(2,'0')}/${String(m+1).padStart(2,'0')}`); }
+        }
+        const cores = ['#16a34a', '#1e3a5f', '#2563eb', '#7c1d6f', '#b45309'];
+        const datasets = anosUsar.map((ano, i) => {
+            const porKey = {};
+            dadosRios.filter(r => r.nome === rioSel).forEach(r => {
+                const dt = new Date(r.data + 'T00:00:00');
+                if (dt.getFullYear() !== ano) return;
+                const k = `${dt.getMonth()}-${dt.getDate()}`;
+                (porKey[k] = porKey[k] || []).push(r.nivel);
+            });
+            const data = dailyDates.map(({ m, d }) => {
+                const a = porKey[`${m}-${d}`];
+                return a ? a.reduce((x, y) => x + y, 0) / a.length : null;
+            });
+            return { label: String(ano), data, borderColor: cores[i % cores.length], backgroundColor: cores[i % cores.length],
+                borderWidth: ano === anoAtual ? 2.5 : 1.5, pointRadius: 0, spanGaps: true, tension: 0.2, fill: false };
+        });
+        chartResumoComparada = new Chart(cv.getContext('2d'), {
+            type: 'line', data: { labels: dailyLabels, datasets },
+            options: { responsive: true, maintainAspectRatio: false, animation: false,
+                plugins: { title: { display: true, text: 'Régua Comparada — Últimos Anos' }, legend: { position: 'bottom' } },
+                scales: { x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: false,
+                    callback: (v, i) => { const l = dailyLabels[i]; if (!l) return ''; const [dd, mm] = l.split('/'); return dd === '01' ? MESES[parseInt(mm)-1] : ''; } } },
+                    y: { title: { display: true, text: 'Nível (m)' }, beginAtZero: true } } }
+        });
+    }
+
+    function renderResumoChartSimulacao(rioSel, proj) {
+        const cv = document.getElementById('chartResumoSimulacao');
+        if (!cv) return;
+        if (chartResumoSimulacao) chartResumoSimulacao.destroy();
+        const anoAtual = new Date().getFullYear();
+        const dailyDates = [], dailyLabels = [];
+        for (let m = 0; m < 12; m++) {
+            const dm = new Date(anoAtual, m + 1, 0).getDate();
+            for (let d = 1; d <= dm; d++) { dailyDates.push(new Date(anoAtual, m, d)); dailyLabels.push(`${String(d).padStart(2,'0')}/${String(m+1).padStart(2,'0')}`); }
+        }
+        const fmt = dt => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+        const porData = {};
+        dadosRios.filter(r => r.nome === rioSel).forEach(r => {
+            const dt = new Date(r.data + 'T12:00:00');
+            if (dt.getFullYear() !== anoAtual || isNaN(dt)) return;
+            (porData[r.data.substring(0,10)] = porData[r.data.substring(0,10)] || []).push(r.nivel);
+        });
+        const histData = dailyDates.map(dt => { const a = porData[fmt(dt)]; return a ? a.reduce((x, y) => x + y, 0) / a.length : null; });
+        const lastHist = histData.reduce((acc, v, i) => v !== null ? i : acc, -1);
+        const build = cen => {
+            const s = gerarSerieDiariaRio(rioSel, cen, proj);
+            if (!s.length) return dailyDates.map(() => null);
+            const mp = new Map(s.map(x => [fmt(x.date), x.nivel]));
+            return dailyDates.map((dt, i) => i < lastHist ? null : (mp.has(fmt(dt)) ? mp.get(fmt(dt)) : null));
+        };
+        const me = build('medio'), ot = build('otimista'), pe = build('pessimista');
+        if (lastHist >= 0) { const vH = histData[lastHist]; [me, ot, pe].forEach(a => { if (a[lastHist] === null) a[lastHist] = vH; }); }
+        const datasets = [
+            { label: 'Réguas', data: histData, borderColor: '#1e3a5f', backgroundColor: '#1e3a5f', borderWidth: 2.5, pointRadius: 0, spanGaps: false, fill: false },
+            { label: 'Prev. Otimista', data: ot, borderColor: '#16a34a', borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0, spanGaps: false, fill: false },
+            { label: 'Prev. Média',    data: me, borderColor: '#7c3aed', borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0, spanGaps: false, fill: false },
+            { label: 'Prev. Pessimista',data: pe, borderColor: '#dc2626', borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0, spanGaps: false, fill: false },
+        ];
+        const refs = [];
+        empurradores.filter(e => e.ativo !== false).forEach(e => refs.push({ nome: e.nome, nivel: e.caladoMin - variaveis.abaco + variaveis.faq }));
+        barcacas.filter(b => b.ativo !== false).forEach(b => refs.push({ nome: 'Par. ' + b.nome, nivel: b.caladoMin - variaveis.abaco + variaveis.faq }));
+        const refCores = ['#f97316', '#0f172a', '#0891b2', '#64748b', '#334155', '#0ea5e9'];
+        refs.forEach((r, i) => { datasets.push({ label: r.nome, data: dailyLabels.map(() => r.nivel), borderColor: refCores[i % refCores.length], borderWidth: 1, borderDash: [2, 3], pointRadius: 0, spanGaps: true, fill: false, order: -1 }); });
+        chartResumoSimulacao = new Chart(cv.getContext('2d'), {
+            type: 'line', data: { labels: dailyLabels, datasets },
+            options: { responsive: true, maintainAspectRatio: false, animation: false, interaction: { intersect: false, mode: 'index' },
+                plugins: { title: { display: true, text: `Simulações ${resumoNomeRio(rioSel)} — ${anoAtual}` }, legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } } },
+                scales: { x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: false,
+                    callback: (v, i) => { const l = dailyLabels[i]; if (!l) return ''; const [dd, mm] = l.split('/'); return dd === '01' ? MESES[parseInt(mm)-1] : ''; } } },
+                    y: { title: { display: true, text: 'Nível (m)' }, beginAtZero: true } } }
+        });
+    }
+
+    // ── Exportação / cópia ──
+    function _resumoStatus(msg) {
+        const el = document.getElementById('resumoCopyStatus');
+        if (!el) return;
+        el.textContent = msg;
+        el.classList.remove('hidden');
+        clearTimeout(el._t);
+        el._t = setTimeout(() => el.classList.add('hidden'), 4000);
+    }
+
+    function montarResumoHTML(comImagens) {
+        const doc = document.getElementById('resumoDoc');
+        const clone = doc.cloneNode(true);
+        // substitui inputs (Landing) por texto
+        clone.querySelectorAll('input').forEach(inp => {
+            const span = document.createElement('span');
+            span.textContent = inp.value;
+            inp.replaceWith(span);
+        });
+        // substitui canvases por imagens
+        if (comImagens) {
+            const map = { chartResumoComparada, chartResumoSimulacao };
+            clone.querySelectorAll('canvas').forEach(cv => {
+                const chart = map[cv.id];
+                const img = document.createElement('img');
+                img.className = 'resumo-img';
+                if (chart) { try { img.src = chart.toBase64Image('image/png', 1); } catch (e) {} }
+                (cv.parentElement || cv).replaceWith(img);
+            });
+        } else {
+            clone.querySelectorAll('canvas').forEach(cv => (cv.parentElement || cv).remove());
+        }
+        return clone.innerHTML;
+    }
+
+    async function copiarResumo() {
+        try {
+            const html = `<div style="font-family:Inter,Arial,sans-serif;color:#1f2937;font-size:14px;line-height:1.5">${montarResumoHTML(true)}</div>`;
+            const texto = document.getElementById('resumoDoc').innerText;
+            if (navigator.clipboard && window.ClipboardItem) {
+                await navigator.clipboard.write([new ClipboardItem({
+                    'text/html': new Blob([html], { type: 'text/html' }),
+                    'text/plain': new Blob([texto], { type: 'text/plain' })
+                })]);
+                _resumoStatus('Resumo (com gráficos) copiado para a área de transferência.');
+            } else {
+                await navigator.clipboard.writeText(texto);
+                _resumoStatus('Resumo copiado como texto (navegador sem suporte a imagem na cópia).');
+            }
+        } catch (e) {
+            _resumoStatus('Não foi possível copiar automaticamente. Use "Baixar HTML".');
+        }
+    }
+
+    async function copiarResumoTexto() {
+        try {
+            await navigator.clipboard.writeText(document.getElementById('resumoDoc').innerText);
+            _resumoStatus('Texto copiado para a área de transferência.');
+        } catch (e) {
+            _resumoStatus('Não foi possível copiar o texto.');
+        }
+    }
+
+    function exportarResumoPDF() { window.print(); }
+
+    function exportarResumoHTML() {
+        const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
+            <title>Resumo de Previsão de Calado</title>
+            <style>
+                body{font-family:Inter,Arial,sans-serif;color:#1f2937;line-height:1.55;max-width:980px;margin:24px auto;padding:0 16px}
+                h1{font-size:20px} h2{font-size:15px;border-bottom:2px solid #e5e7eb;padding-bottom:4px;margin-top:22px}
+                table{width:100%;border-collapse:collapse;font-size:12px;margin:6px 0}
+                th,td{border:1px solid #d1d5db;padding:5px 8px;text-align:center} th{background:#f1f5f9}
+                td:first-child,th:first-child{text-align:left}
+                .row-pessimista{background:#fde8e8} .row-medio{background:#e3edf7} .row-otimista{background:#e3f4e7}
+                .resumo-img{width:100%;max-width:920px;border:1px solid #e5e7eb;border-radius:6px;margin:4px 0 12px;display:block}
+                .resumo-vars{background:#f8fafc;border:1px solid #e5e7eb;border-radius:6px;padding:10px 14px}
+                .resumo-foot{font-size:11px;color:#6b7280}
+            </style></head><body>${montarResumoHTML(true)}</body></html>`;
+        const blob = new Blob([html], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `resumo-previsao-calado-${new Date().toISOString().slice(0,10)}.html`;
+        a.click();
+        URL.revokeObjectURL(url);
+        _resumoStatus('Arquivo HTML gerado.');
     }
 
     // ==========================================================================
