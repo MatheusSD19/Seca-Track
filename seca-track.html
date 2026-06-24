@@ -4137,12 +4137,11 @@
         container.innerHTML = ativos.map(a => {
             const ativo = !!visiveis[a.key];
             const cor = corMap[a.key] || CALADO_CORES[0];
-            const style = ativo
-                ? `background-color:${cor}1a;border-color:${cor};color:${cor}`
-                : `background-color:transparent;border-color:${cor};color:${cor};opacity:0.55`;
             const cls = 'text-xs px-2 py-1 rounded-full border font-medium cursor-pointer transition-all';
+            const style = ativo ? `background-color:${cor}1a;border-color:${cor};color:${cor}` : '';
+            const clsInativo = ativo ? '' : ' bg-gray-100 border-gray-300 text-gray-500';
             const caladoOpMin = (a.calado + variaveis.abaco - variaveis.faq).toFixed(2);
-            return `<button class="${cls}" style="${style}" onclick="toggleCalado('${a.key}')" title="${a.grupo}: ${a.nome} — cal. op. mín. ${caladoOpMin} m">${a.nome}</button>`;
+            return `<button class="${cls}${clsInativo}" style="${style}" onclick="toggleCalado('${a.key}')" title="${a.grupo}: ${a.nome} — cal. op. mín. ${caladoOpMin} m">${a.nome}</button>`;
         }).join('');
         lucide.createIcons();
     }
