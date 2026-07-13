@@ -4217,19 +4217,26 @@
         const ultimoNivel = comp ? formatNivel(comp.ultimo.nivel) : '—';
 
         // ── Tabela de paradas ──
+        // Exibe automaticamente apenas os ativos que terão redução de calado ou parada
+        // no período (têm data de início); os demais ficam ocultos.
+        const paradasComEvento = paradas.filter(r => r.parada);
         let tParadas = `<table><thead><tr>
             <th>Cenário</th><th>Embarcação</th><th>Régua Mínima (m)</th><th>Régua Simulada (m)</th>
             <th>Parada</th><th>Retorno</th><th>Dias Parado</th></tr></thead><tbody>`;
-        paradas.forEach(r => {
-            tParadas += `<tr class="${r.cls}">
-                <td>${r.cenario}</td>
-                <td style="text-align:left">${r.embarcacao}</td>
-                <td>${formatNivel(r.reguaMin)}</td>
-                <td>${r.reguaSim !== null && r.reguaSim !== undefined ? formatNivel(r.reguaSim) : '—'}</td>
-                <td>${r.parada ? formatDateBR(r.parada) : '—'}</td>
-                <td>${r.retorno ? formatDateBR(r.retorno) : '—'}</td>
-                <td><b>${r.dias || '—'}</b></td></tr>`;
-        });
+        if (!paradasComEvento.length) {
+            tParadas += `<tr><td colspan="7" style="text-align:center;color:#6b7280">Nenhuma embarcação com redução de calado ou parada projetada para os cenários atuais.</td></tr>`;
+        } else {
+            paradasComEvento.forEach(r => {
+                tParadas += `<tr class="${r.cls}">
+                    <td>${r.cenario}</td>
+                    <td style="text-align:left">${r.embarcacao}</td>
+                    <td>${formatNivel(r.reguaMin)}</td>
+                    <td>${r.reguaSim !== null && r.reguaSim !== undefined ? formatNivel(r.reguaSim) : '—'}</td>
+                    <td>${r.parada ? formatDateBR(r.parada) : '—'}</td>
+                    <td>${r.retorno ? formatDateBR(r.retorno) : '—'}</td>
+                    <td><b>${r.dias || '—'}</b></td></tr>`;
+            });
+        }
         tParadas += '</tbody></table>';
 
         // ── Tabela de aderência de volume ──
