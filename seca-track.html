@@ -183,6 +183,27 @@
                         </button>
                     </div>
                 </div>
+                <!-- Base de Forecast + Precipitação -->
+                <div class="flex items-center gap-4 flex-wrap mb-3 pb-3 border-b border-gray-100">
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-medium text-gray-600 flex items-center gap-1"><i data-lucide="database" class="w-3 h-3"></i> Base de Forecast:</span>
+                        <div class="inline-flex rounded-md border border-gray-300 overflow-hidden">
+                            <button id="btnBaseSimulada" onclick="setForecastBase('simulada')" class="text-xs px-3 py-1 font-medium transition-colors bg-blue-600 text-white" title="Projeção estatística a partir do histórico (comportamento padrão)">Simulada</button>
+                            <button id="btnBaseOficial" onclick="setForecastBase('oficial')" class="text-xs px-3 py-1 font-medium transition-colors bg-white text-gray-600 hover:bg-gray-50" title="Previsão oficial de nível (CSV de modelos CFSv2/ECMWF SEAS)">Oficial</button>
+                        </div>
+                    </div>
+                    <label id="wrapTogglePrecip" class="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer" style="display:none" title="Exibir/ocultar precipitação no eixo secundário (independente da base de nível)">
+                        <input type="checkbox" id="chkMostrarPrecip" onchange="toggleMostrarPrecip(this.checked)" class="accent-sky-500">
+                        <i data-lucide="cloud-rain" class="w-3.5 h-3.5 text-sky-500"></i> Precipitação
+                    </label>
+                    <div class="flex items-center gap-2 ml-auto">
+                        <label class="btn-secondary text-xs flex items-center gap-1.5 py-1 cursor-pointer" title="Enviar CSV de previsão oficial. Colunas: Date, Station, Series, WaterLevel_Forecast">
+                            <i data-lucide="upload" class="w-3 h-3"></i> Upar base oficial
+                            <input type="file" id="forecastOficialUpload" accept=".csv,.xlsx,.xls,.txt" class="hidden" onchange="handleForecastOficialUpload(this)">
+                        </label>
+                    </div>
+                </div>
+                <p id="forecastOficialStatus" class="text-xs text-gray-400 mb-2"></p>
                 <div class="chart-container"><canvas id="chartRios"></canvas></div>
                 <p class="text-xs text-gray-500 mt-2" id="notaGraficoRios">
                     Cenários baseados em projeção histórica por mês. Tipo de projeção configurável em "Gerenciar Cenários". Piso em 0.
@@ -1469,6 +1490,13 @@
     let chartPieEmpurrador  = null;
     let chartPieRota        = null;
 
+    // ---------- Base de Forecast (simulada x oficial) ----------
+    // 'simulada' = projeção estatística a partir do histórico (comportamento original).
+    // 'oficial'  = previsão de nível vinda de um CSV de modelos (CFSv2/ECMWF SEAS).
+    let forecastBase   = 'simulada';
+    let forecastOficial = null;   // estrutura carregada do CSV (ver parseForecastOficialCSV)
+    let mostrarPrecip  = false;   // exibir/ocultar barras de precipitação no gráfico principal
+
     // File System Access
     let dbDirHandle = null;      // DirectoryHandle escolhido pelo usuário
     const DB_FILE_NAME = 'seca-track-db.json';
@@ -1503,10 +1531,12 @@
         buildRotaMesesAtivosGrid();
         lucide.createIcons();
         loadFromLocalStorage();
+        ensureForecastOficial();   // garante a base oficial "da pasta" (embutida) disponível
         applyVariaveisToInputs();
         await restoreDbHandle();
         updateDbStatus();
         updateAllViews();
+        renderForecastBaseUI();
         restoreUiFiltros();
 
         // Persiste filtros de UI ao alterar seleções
@@ -1558,6 +1588,250 @@
     }
 
     // ---------- Persistência ----------
+    // ==========================================================================
+    // BASE DE FORECAST OFICIAL (CSV de modelos de nível + precipitação)
+    // Formato esperado do CSV: Date, Station, Series, WaterLevel_Forecast
+    //   - Séries de nível  -> alimentam os cenários (envelope entre modelos).
+    //   - Séries de precip. -> apenas para plot no gráfico (eixo secundário).
+    // ==========================================================================
+
+    // Base oficial que "está na pasta agora" — embutida para funcionar offline (file://).
+    // Pode ser sobrescrita a qualquer momento via upload de arquivo.
+    const OFICIAL_CSV_EMBUTIDO = "Date,Station,Series,WaterLevel_Forecast\n2026-07-06,Itaituba – Tapajós,CFSv2 (init 2026-07-05),630.71\n2026-07-07,Itaituba – Tapajós,CFSv2 (init 2026-07-05),626.71\n2026-07-08,Itaituba – Tapajós,CFSv2 (init 2026-07-05),622.94\n2026-07-09,Itaituba – Tapajós,CFSv2 (init 2026-07-05),619.43\n2026-07-10,Itaituba – Tapajós,CFSv2 (init 2026-07-05),615.58\n2026-07-11,Itaituba – Tapajós,CFSv2 (init 2026-07-05),611.67\n2026-07-12,Itaituba – Tapajós,CFSv2 (init 2026-07-05),607.31\n2026-07-13,Itaituba – Tapajós,CFSv2 (init 2026-07-05),602.78\n2026-07-14,Itaituba – Tapajós,CFSv2 (init 2026-07-05),598.38\n2026-07-15,Itaituba – Tapajós,CFSv2 (init 2026-07-05),594.12\n2026-07-16,Itaituba – Tapajós,CFSv2 (init 2026-07-05),590.91\n2026-07-17,Itaituba – Tapajós,CFSv2 (init 2026-07-05),588.15\n2026-07-18,Itaituba – Tapajós,CFSv2 (init 2026-07-05),584.6\n2026-07-19,Itaituba – Tapajós,CFSv2 (init 2026-07-05),582.84\n2026-07-20,Itaituba – Tapajós,CFSv2 (init 2026-07-05),580.99\n2026-07-21,Itaituba – Tapajós,CFSv2 (init 2026-07-05),578.34\n2026-07-22,Itaituba – Tapajós,CFSv2 (init 2026-07-05),575.65\n2026-07-23,Itaituba – Tapajós,CFSv2 (init 2026-07-05),571.87\n2026-07-24,Itaituba – Tapajós,CFSv2 (init 2026-07-05),568.73\n2026-07-25,Itaituba – Tapajós,CFSv2 (init 2026-07-05),565.56\n2026-07-26,Itaituba – Tapajós,CFSv2 (init 2026-07-05),562.48\n2026-07-27,Itaituba – Tapajós,CFSv2 (init 2026-07-05),559.23\n2026-07-28,Itaituba – Tapajós,CFSv2 (init 2026-07-05),556.61\n2026-07-29,Itaituba – Tapajós,CFSv2 (init 2026-07-05),554.56\n2026-07-30,Itaituba – Tapajós,CFSv2 (init 2026-07-05),553.06\n2026-07-31,Itaituba – Tapajós,CFSv2 (init 2026-07-05),550.52\n2026-08-01,Itaituba – Tapajós,CFSv2 (init 2026-07-05),547.03\n2026-08-02,Itaituba – Tapajós,CFSv2 (init 2026-07-05),543.49\n2026-08-03,Itaituba – Tapajós,CFSv2 (init 2026-07-05),540.55\n2026-08-04,Itaituba – Tapajós,CFSv2 (init 2026-07-05),536.48\n2026-08-05,Itaituba – Tapajós,CFSv2 (init 2026-07-05),532.41\n2026-08-06,Itaituba – Tapajós,CFSv2 (init 2026-07-05),528.88\n2026-08-07,Itaituba – Tapajós,CFSv2 (init 2026-07-05),525.95\n2026-08-08,Itaituba – Tapajós,CFSv2 (init 2026-07-05),522.91\n2026-08-09,Itaituba – Tapajós,CFSv2 (init 2026-07-05),519.74\n2026-08-10,Itaituba – Tapajós,CFSv2 (init 2026-07-05),516.43\n2026-08-11,Itaituba – Tapajós,CFSv2 (init 2026-07-05),512.68\n2026-08-12,Itaituba – Tapajós,CFSv2 (init 2026-07-05),508.41\n2026-08-13,Itaituba – Tapajós,CFSv2 (init 2026-07-05),503.6\n2026-08-14,Itaituba – Tapajós,CFSv2 (init 2026-07-05),498.51\n2026-08-15,Itaituba – Tapajós,CFSv2 (init 2026-07-05),492.04\n2026-08-16,Itaituba – Tapajós,CFSv2 (init 2026-07-05),485.95\n2026-08-17,Itaituba – Tapajós,CFSv2 (init 2026-07-05),480.47\n2026-08-18,Itaituba – Tapajós,CFSv2 (init 2026-07-05),476.01\n2026-08-19,Itaituba – Tapajós,CFSv2 (init 2026-07-05),471.38\n2026-08-20,Itaituba – Tapajós,CFSv2 (init 2026-07-05),466.79\n2026-08-21,Itaituba – Tapajós,CFSv2 (init 2026-07-05),461.43\n2026-08-22,Itaituba – Tapajós,CFSv2 (init 2026-07-05),455.82\n2026-08-23,Itaituba – Tapajós,CFSv2 (init 2026-07-05),450.53\n2026-08-24,Itaituba – Tapajós,CFSv2 (init 2026-07-05),445.25\n2026-08-25,Itaituba – Tapajós,CFSv2 (init 2026-07-05),440.04\n2026-08-26,Itaituba – Tapajós,CFSv2 (init 2026-07-05),435.36\n2026-08-27,Itaituba – Tapajós,CFSv2 (init 2026-07-05),430.83\n2026-08-28,Itaituba – Tapajós,CFSv2 (init 2026-07-05),426.27\n2026-08-29,Itaituba – Tapajós,CFSv2 (init 2026-07-05),422.66\n2026-08-30,Itaituba – Tapajós,CFSv2 (init 2026-07-05),418.25\n2026-08-31,Itaituba – Tapajós,CFSv2 (init 2026-07-05),414.43\n2026-09-01,Itaituba – Tapajós,CFSv2 (init 2026-07-05),410.62\n2026-09-02,Itaituba – Tapajós,CFSv2 (init 2026-07-05),405.74\n2026-09-03,Itaituba – Tapajós,CFSv2 (init 2026-07-05),400.53\n2026-09-04,Itaituba – Tapajós,CFSv2 (init 2026-07-05),394.9\n2026-09-05,Itaituba – Tapajós,CFSv2 (init 2026-07-05),388.99\n2026-09-06,Itaituba – Tapajós,CFSv2 (init 2026-07-05),383.31\n2026-09-07,Itaituba – Tapajós,CFSv2 (init 2026-07-05),376.32\n2026-09-08,Itaituba – Tapajós,CFSv2 (init 2026-07-05),368.83\n2026-09-09,Itaituba – Tapajós,CFSv2 (init 2026-07-05),361.02\n2026-09-10,Itaituba – Tapajós,CFSv2 (init 2026-07-05),353.45\n2026-09-11,Itaituba – Tapajós,CFSv2 (init 2026-07-05),345.59\n2026-09-12,Itaituba – Tapajós,CFSv2 (init 2026-07-05),338.25\n2026-09-13,Itaituba – Tapajós,CFSv2 (init 2026-07-05),329.98\n2026-09-14,Itaituba – Tapajós,CFSv2 (init 2026-07-05),322.64\n2026-09-15,Itaituba – Tapajós,CFSv2 (init 2026-07-05),314.27\n2026-09-16,Itaituba – Tapajós,CFSv2 (init 2026-07-05),306.14\n2026-09-17,Itaituba – Tapajós,CFSv2 (init 2026-07-05),297.73\n2026-09-18,Itaituba – Tapajós,CFSv2 (init 2026-07-05),289.7\n2026-09-19,Itaituba – Tapajós,CFSv2 (init 2026-07-05),281.8\n2026-09-20,Itaituba – Tapajós,CFSv2 (init 2026-07-05),274.67\n2026-09-21,Itaituba – Tapajós,CFSv2 (init 2026-07-05),267.04\n2026-09-22,Itaituba – Tapajós,CFSv2 (init 2026-07-05),260.01\n2026-09-23,Itaituba – Tapajós,CFSv2 (init 2026-07-05),253.62\n2026-09-24,Itaituba – Tapajós,CFSv2 (init 2026-07-05),247.39\n2026-09-25,Itaituba – Tapajós,CFSv2 (init 2026-07-05),241.84\n2026-09-26,Itaituba – Tapajós,CFSv2 (init 2026-07-05),235.18\n2026-09-27,Itaituba – Tapajós,CFSv2 (init 2026-07-05),228.74\n2026-09-28,Itaituba – Tapajós,CFSv2 (init 2026-07-05),222.37\n2026-09-29,Itaituba – Tapajós,CFSv2 (init 2026-07-05),215.97\n2026-09-30,Itaituba – Tapajós,CFSv2 (init 2026-07-05),210.34\n2026-10-01,Itaituba – Tapajós,CFSv2 (init 2026-07-05),205.09\n2026-10-02,Itaituba – Tapajós,CFSv2 (init 2026-07-05),200.6\n2026-10-03,Itaituba – Tapajós,CFSv2 (init 2026-07-05),196.34\n2026-10-04,Itaituba – Tapajós,CFSv2 (init 2026-07-05),191.09\n2026-10-05,Itaituba – Tapajós,CFSv2 (init 2026-07-05),185.94\n2026-10-06,Itaituba – Tapajós,CFSv2 (init 2026-07-05),181.62\n2026-10-07,Itaituba – Tapajós,CFSv2 (init 2026-07-05),177.98\n2026-10-08,Itaituba – Tapajós,CFSv2 (init 2026-07-05),174.12\n2026-10-09,Itaituba – Tapajós,CFSv2 (init 2026-07-05),171.12\n2026-10-10,Itaituba – Tapajós,CFSv2 (init 2026-07-05),169.28\n2026-10-11,Itaituba – Tapajós,CFSv2 (init 2026-07-05),169.05\n2026-10-12,Itaituba – Tapajós,CFSv2 (init 2026-07-05),167.62\n2026-10-13,Itaituba – Tapajós,CFSv2 (init 2026-07-05),167.63\n2026-10-14,Itaituba – Tapajós,CFSv2 (init 2026-07-05),166.89\n2026-10-15,Itaituba – Tapajós,CFSv2 (init 2026-07-05),170.87\n2026-10-16,Itaituba – Tapajós,CFSv2 (init 2026-07-05),170.37\n2026-10-17,Itaituba – Tapajós,CFSv2 (init 2026-07-05),169.57\n2026-10-18,Itaituba – Tapajós,CFSv2 (init 2026-07-05),169.3\n2026-10-19,Itaituba – Tapajós,CFSv2 (init 2026-07-05),169.29\n2026-10-20,Itaituba – Tapajós,CFSv2 (init 2026-07-05),169.14\n2026-10-21,Itaituba – Tapajós,CFSv2 (init 2026-07-05),170.36\n2026-10-22,Itaituba – Tapajós,CFSv2 (init 2026-07-05),171.01\n2026-10-23,Itaituba – Tapajós,CFSv2 (init 2026-07-05),170.79\n2026-10-24,Itaituba – Tapajós,CFSv2 (init 2026-07-05),171.72\n2026-10-25,Itaituba – Tapajós,CFSv2 (init 2026-07-05),175.33\n2026-10-26,Itaituba – Tapajós,CFSv2 (init 2026-07-05),178.43\n2026-10-27,Itaituba – Tapajós,CFSv2 (init 2026-07-05),179.35\n2026-10-28,Itaituba – Tapajós,CFSv2 (init 2026-07-05),179.62\n2026-10-29,Itaituba – Tapajós,CFSv2 (init 2026-07-05),180.31\n2026-10-30,Itaituba – Tapajós,CFSv2 (init 2026-07-05),181.67\n2026-10-31,Itaituba – Tapajós,CFSv2 (init 2026-07-05),183.4\n2026-11-01,Itaituba – Tapajós,CFSv2 (init 2026-07-05),184.54\n2026-11-02,Itaituba – Tapajós,CFSv2 (init 2026-07-05),186.12\n2026-11-03,Itaituba – Tapajós,CFSv2 (init 2026-07-05),187.55\n2026-11-04,Itaituba – Tapajós,CFSv2 (init 2026-07-05),190.67\n2026-11-05,Itaituba – Tapajós,CFSv2 (init 2026-07-05),193.34\n2026-11-06,Itaituba – Tapajós,CFSv2 (init 2026-07-05),194.53\n2026-11-07,Itaituba – Tapajós,CFSv2 (init 2026-07-05),197.42\n2026-11-08,Itaituba – Tapajós,CFSv2 (init 2026-07-05),198.54\n2026-11-09,Itaituba – Tapajós,CFSv2 (init 2026-07-05),199.53\n2026-11-10,Itaituba – Tapajós,CFSv2 (init 2026-07-05),199.92\n2026-11-11,Itaituba – Tapajós,CFSv2 (init 2026-07-05),201.78\n2026-11-12,Itaituba – Tapajós,CFSv2 (init 2026-07-05),203.63\n2026-11-13,Itaituba – Tapajós,CFSv2 (init 2026-07-05),203.45\n2026-11-14,Itaituba – Tapajós,CFSv2 (init 2026-07-05),206.15\n2026-11-15,Itaituba – Tapajós,CFSv2 (init 2026-07-05),208.26\n2026-11-16,Itaituba – Tapajós,CFSv2 (init 2026-07-05),212.65\n2026-11-17,Itaituba – Tapajós,CFSv2 (init 2026-07-05),221.88\n2026-11-18,Itaituba – Tapajós,CFSv2 (init 2026-07-05),226.12\n2026-11-19,Itaituba – Tapajós,CFSv2 (init 2026-07-05),230.14\n2026-11-20,Itaituba – Tapajós,CFSv2 (init 2026-07-05),234.86\n2026-11-21,Itaituba – Tapajós,CFSv2 (init 2026-07-05),238.04\n2026-11-22,Itaituba – Tapajós,CFSv2 (init 2026-07-05),242.77\n2026-11-23,Itaituba – Tapajós,CFSv2 (init 2026-07-05),247.46\n2026-11-24,Itaituba – Tapajós,CFSv2 (init 2026-07-05),252.1\n2026-11-25,Itaituba – Tapajós,CFSv2 (init 2026-07-05),254.93\n2026-11-26,Itaituba – Tapajós,CFSv2 (init 2026-07-05),257.61\n2026-11-27,Itaituba – Tapajós,CFSv2 (init 2026-07-05),259.15\n2026-11-28,Itaituba – Tapajós,CFSv2 (init 2026-07-05),263.24\n2026-11-29,Itaituba – Tapajós,CFSv2 (init 2026-07-05),266.52\n2026-11-30,Itaituba – Tapajós,CFSv2 (init 2026-07-05),269.68\n2026-12-01,Itaituba – Tapajós,CFSv2 (init 2026-07-05),274.29\n2026-12-02,Itaituba – Tapajós,CFSv2 (init 2026-07-05),277.96\n2026-12-03,Itaituba – Tapajós,CFSv2 (init 2026-07-05),284.39\n2026-12-04,Itaituba – Tapajós,CFSv2 (init 2026-07-05),286.95\n2026-12-05,Itaituba – Tapajós,CFSv2 (init 2026-07-05),291.77\n2026-12-06,Itaituba – Tapajós,CFSv2 (init 2026-07-05),295.04\n2026-12-07,Itaituba – Tapajós,CFSv2 (init 2026-07-05),304.99\n2026-12-08,Itaituba – Tapajós,CFSv2 (init 2026-07-05),310.97\n2026-12-09,Itaituba – Tapajós,CFSv2 (init 2026-07-05),319.94\n2026-12-10,Itaituba – Tapajós,CFSv2 (init 2026-07-05),326.52\n2026-12-11,Itaituba – Tapajós,CFSv2 (init 2026-07-05),334.53\n2026-12-12,Itaituba – Tapajós,CFSv2 (init 2026-07-05),340.78\n2026-12-13,Itaituba – Tapajós,CFSv2 (init 2026-07-05),346.49\n2026-12-14,Itaituba – Tapajós,CFSv2 (init 2026-07-05),353.09\n2026-12-15,Itaituba – Tapajós,CFSv2 (init 2026-07-05),359.69\n2026-12-16,Itaituba – Tapajós,CFSv2 (init 2026-07-05),366.68\n2026-12-17,Itaituba – Tapajós,CFSv2 (init 2026-07-05),373.48\n2026-12-18,Itaituba – Tapajós,CFSv2 (init 2026-07-05),380.17\n2026-12-19,Itaituba – Tapajós,CFSv2 (init 2026-07-05),386.72\n2026-12-20,Itaituba – Tapajós,CFSv2 (init 2026-07-05),393.04\n2026-12-21,Itaituba – Tapajós,CFSv2 (init 2026-07-05),399.87\n2026-12-22,Itaituba – Tapajós,CFSv2 (init 2026-07-05),405.85\n2026-12-23,Itaituba – Tapajós,CFSv2 (init 2026-07-05),412.36\n2026-12-24,Itaituba – Tapajós,CFSv2 (init 2026-07-05),418.86\n2026-12-25,Itaituba – Tapajós,CFSv2 (init 2026-07-05),424.02\n2026-12-26,Itaituba – Tapajós,CFSv2 (init 2026-07-05),428.3\n2026-12-27,Itaituba – Tapajós,CFSv2 (init 2026-07-05),431.3\n2026-12-28,Itaituba – Tapajós,CFSv2 (init 2026-07-05),434.03\n2026-12-29,Itaituba – Tapajós,CFSv2 (init 2026-07-05),438.49\n2026-12-30,Itaituba – Tapajós,CFSv2 (init 2026-07-05),443.59\n2026-12-31,Itaituba – Tapajós,CFSv2 (init 2026-07-05),450.07\n2026-07-06,Itaituba – Tapajós,CFSv2 (init 2026-06-28),630.93\n2026-07-07,Itaituba – Tapajós,CFSv2 (init 2026-06-28),626.76\n2026-07-08,Itaituba – Tapajós,CFSv2 (init 2026-06-28),622.93\n2026-07-09,Itaituba – Tapajós,CFSv2 (init 2026-06-28),619.52\n2026-07-10,Itaituba – Tapajós,CFSv2 (init 2026-06-28),615.36\n2026-07-11,Itaituba – Tapajós,CFSv2 (init 2026-06-28),611.15\n2026-07-12,Itaituba – Tapajós,CFSv2 (init 2026-06-28),606.78\n2026-07-13,Itaituba – Tapajós,CFSv2 (init 2026-06-28),602.25\n2026-07-14,Itaituba – Tapajós,CFSv2 (init 2026-06-28),598.01\n2026-07-15,Itaituba – Tapajós,CFSv2 (init 2026-06-28),593.88\n2026-07-16,Itaituba – Tapajós,CFSv2 (init 2026-06-28),590.94\n2026-07-17,Itaituba – Tapajós,CFSv2 (init 2026-06-28),588.13\n2026-07-18,Itaituba – Tapajós,CFSv2 (init 2026-06-28),584.0\n2026-07-19,Itaituba – Tapajós,CFSv2 (init 2026-06-28),581.0\n2026-07-20,Itaituba – Tapajós,CFSv2 (init 2026-06-28),578.12\n2026-07-21,Itaituba – Tapajós,CFSv2 (init 2026-06-28),575.04\n2026-07-22,Itaituba – Tapajós,CFSv2 (init 2026-06-28),573.23\n2026-07-23,Itaituba – Tapajós,CFSv2 (init 2026-06-28),569.85\n2026-07-24,Itaituba – Tapajós,CFSv2 (init 2026-06-28),566.19\n2026-07-25,Itaituba – Tapajós,CFSv2 (init 2026-06-28),562.7\n2026-07-26,Itaituba – Tapajós,CFSv2 (init 2026-06-28),559.51\n2026-07-27,Itaituba – Tapajós,CFSv2 (init 2026-06-28),556.55\n2026-07-28,Itaituba – Tapajós,CFSv2 (init 2026-06-28),553.86\n2026-07-29,Itaituba – Tapajós,CFSv2 (init 2026-06-28),551.55\n2026-07-30,Itaituba – Tapajós,CFSv2 (init 2026-06-28),550.33\n2026-07-31,Itaituba – Tapajós,CFSv2 (init 2026-06-28),547.62\n2026-08-01,Itaituba – Tapajós,CFSv2 (init 2026-06-28),544.07\n2026-08-02,Itaituba – Tapajós,CFSv2 (init 2026-06-28),540.47\n2026-08-03,Itaituba – Tapajós,CFSv2 (init 2026-06-28),536.02\n2026-08-04,Itaituba – Tapajós,CFSv2 (init 2026-06-28),531.47\n2026-08-05,Itaituba – Tapajós,CFSv2 (init 2026-06-28),527.15\n2026-08-06,Itaituba – Tapajós,CFSv2 (init 2026-06-28),523.89\n2026-08-07,Itaituba – Tapajós,CFSv2 (init 2026-06-28),521.79\n2026-08-08,Itaituba – Tapajós,CFSv2 (init 2026-06-28),518.67\n2026-08-09,Itaituba – Tapajós,CFSv2 (init 2026-06-28),515.86\n2026-08-10,Itaituba – Tapajós,CFSv2 (init 2026-06-28),512.48\n2026-08-11,Itaituba – Tapajós,CFSv2 (init 2026-06-28),508.57\n2026-08-12,Itaituba – Tapajós,CFSv2 (init 2026-06-28),504.31\n2026-08-13,Itaituba – Tapajós,CFSv2 (init 2026-06-28),499.43\n2026-08-14,Itaituba – Tapajós,CFSv2 (init 2026-06-28),492.69\n2026-08-15,Itaituba – Tapajós,CFSv2 (init 2026-06-28),486.21\n2026-08-16,Itaituba – Tapajós,CFSv2 (init 2026-06-28),479.74\n2026-08-17,Itaituba – Tapajós,CFSv2 (init 2026-06-28),474.47\n2026-08-18,Itaituba – Tapajós,CFSv2 (init 2026-06-28),470.04\n2026-08-19,Itaituba – Tapajós,CFSv2 (init 2026-06-28),465.32\n2026-08-20,Itaituba – Tapajós,CFSv2 (init 2026-06-28),461.49\n2026-08-21,Itaituba – Tapajós,CFSv2 (init 2026-06-28),456.25\n2026-08-22,Itaituba – Tapajós,CFSv2 (init 2026-06-28),451.17\n2026-08-23,Itaituba – Tapajós,CFSv2 (init 2026-06-28),446.3\n2026-08-24,Itaituba – Tapajós,CFSv2 (init 2026-06-28),441.12\n2026-08-25,Itaituba – Tapajós,CFSv2 (init 2026-06-28),435.87\n2026-08-26,Itaituba – Tapajós,CFSv2 (init 2026-06-28),431.05\n2026-08-27,Itaituba – Tapajós,CFSv2 (init 2026-06-28),426.45\n2026-08-28,Itaituba – Tapajós,CFSv2 (init 2026-06-28),421.99\n2026-08-29,Itaituba – Tapajós,CFSv2 (init 2026-06-28),418.44\n2026-08-30,Itaituba – Tapajós,CFSv2 (init 2026-06-28),414.37\n2026-08-31,Itaituba – Tapajós,CFSv2 (init 2026-06-28),410.53\n2026-09-01,Itaituba – Tapajós,CFSv2 (init 2026-06-28),406.22\n2026-09-02,Itaituba – Tapajós,CFSv2 (init 2026-06-28),401.28\n2026-09-03,Itaituba – Tapajós,CFSv2 (init 2026-06-28),395.86\n2026-09-04,Itaituba – Tapajós,CFSv2 (init 2026-06-28),390.03\n2026-09-05,Itaituba – Tapajós,CFSv2 (init 2026-06-28),384.22\n2026-09-06,Itaituba – Tapajós,CFSv2 (init 2026-06-28),377.82\n2026-09-07,Itaituba – Tapajós,CFSv2 (init 2026-06-28),370.84\n2026-09-08,Itaituba – Tapajós,CFSv2 (init 2026-06-28),363.57\n2026-09-09,Itaituba – Tapajós,CFSv2 (init 2026-06-28),355.72\n2026-09-10,Itaituba – Tapajós,CFSv2 (init 2026-06-28),347.77\n2026-09-11,Itaituba – Tapajós,CFSv2 (init 2026-06-28),339.88\n2026-09-12,Itaituba – Tapajós,CFSv2 (init 2026-06-28),331.86\n2026-09-13,Itaituba – Tapajós,CFSv2 (init 2026-06-28),323.59\n2026-09-14,Itaituba – Tapajós,CFSv2 (init 2026-06-28),316.15\n2026-09-15,Itaituba – Tapajós,CFSv2 (init 2026-06-28),307.74\n2026-09-16,Itaituba – Tapajós,CFSv2 (init 2026-06-28),299.87\n2026-09-17,Itaituba – Tapajós,CFSv2 (init 2026-06-28),291.68\n2026-09-18,Itaituba – Tapajós,CFSv2 (init 2026-06-28),283.45\n2026-09-19,Itaituba – Tapajós,CFSv2 (init 2026-06-28),275.57\n2026-09-20,Itaituba – Tapajós,CFSv2 (init 2026-06-28),268.45\n2026-09-21,Itaituba – Tapajós,CFSv2 (init 2026-06-28),260.83\n2026-09-22,Itaituba – Tapajós,CFSv2 (init 2026-06-28),253.87\n2026-09-23,Itaituba – Tapajós,CFSv2 (init 2026-06-28),247.52\n2026-09-24,Itaituba – Tapajós,CFSv2 (init 2026-06-28),241.29\n2026-09-25,Itaituba – Tapajós,CFSv2 (init 2026-06-28),235.19\n2026-09-26,Itaituba – Tapajós,CFSv2 (init 2026-06-28),228.61\n2026-09-27,Itaituba – Tapajós,CFSv2 (init 2026-06-28),222.1\n2026-09-28,Itaituba – Tapajós,CFSv2 (init 2026-06-28),215.59\n2026-09-29,Itaituba – Tapajós,CFSv2 (init 2026-06-28),209.13\n2026-09-30,Itaituba – Tapajós,CFSv2 (init 2026-06-28),203.49\n2026-10-01,Itaituba – Tapajós,CFSv2 (init 2026-06-28),198.03\n2026-10-02,Itaituba – Tapajós,CFSv2 (init 2026-06-28),193.19\n2026-10-03,Itaituba – Tapajós,CFSv2 (init 2026-06-28),188.95\n2026-10-04,Itaituba – Tapajós,CFSv2 (init 2026-06-28),183.8\n2026-10-05,Itaituba – Tapajós,CFSv2 (init 2026-06-28),178.64\n2026-10-06,Itaituba – Tapajós,CFSv2 (init 2026-06-28),174.33\n2026-10-07,Itaituba – Tapajós,CFSv2 (init 2026-06-28),170.47\n2026-10-08,Itaituba – Tapajós,CFSv2 (init 2026-06-28),166.31\n2026-10-09,Itaituba – Tapajós,CFSv2 (init 2026-06-28),162.97\n2026-10-10,Itaituba – Tapajós,CFSv2 (init 2026-06-28),159.11\n2026-10-11,Itaituba – Tapajós,CFSv2 (init 2026-06-28),156.0\n2026-10-12,Itaituba – Tapajós,CFSv2 (init 2026-06-28),154.11\n2026-10-13,Itaituba – Tapajós,CFSv2 (init 2026-06-28),152.63\n2026-10-14,Itaituba – Tapajós,CFSv2 (init 2026-06-28),150.94\n2026-10-15,Itaituba – Tapajós,CFSv2 (init 2026-06-28),149.35\n2026-10-16,Itaituba – Tapajós,CFSv2 (init 2026-06-28),147.65\n2026-10-17,Itaituba – Tapajós,CFSv2 (init 2026-06-28),146.1\n2026-10-18,Itaituba – Tapajós,CFSv2 (init 2026-06-28),145.37\n2026-10-19,Itaituba – Tapajós,CFSv2 (init 2026-06-28),144.92\n2026-10-20,Itaituba – Tapajós,CFSv2 (init 2026-06-28),144.37\n2026-10-21,Itaituba – Tapajós,CFSv2 (init 2026-06-28),145.0\n2026-10-22,Itaituba – Tapajós,CFSv2 (init 2026-06-28),145.84\n2026-10-23,Itaituba – Tapajós,CFSv2 (init 2026-06-28),146.03\n2026-10-24,Itaituba – Tapajós,CFSv2 (init 2026-06-28),148.45\n2026-10-25,Itaituba – Tapajós,CFSv2 (init 2026-06-28),149.66\n2026-10-26,Itaituba – Tapajós,CFSv2 (init 2026-06-28),150.83\n2026-10-27,Itaituba – Tapajós,CFSv2 (init 2026-06-28),151.54\n2026-10-28,Itaituba – Tapajós,CFSv2 (init 2026-06-28),151.82\n2026-10-29,Itaituba – Tapajós,CFSv2 (init 2026-06-28),153.25\n2026-10-30,Itaituba – Tapajós,CFSv2 (init 2026-06-28),155.06\n2026-10-31,Itaituba – Tapajós,CFSv2 (init 2026-06-28),156.79\n2026-11-01,Itaituba – Tapajós,CFSv2 (init 2026-06-28),160.47\n2026-11-02,Itaituba – Tapajós,CFSv2 (init 2026-06-28),164.07\n2026-11-03,Itaituba – Tapajós,CFSv2 (init 2026-06-28),165.77\n2026-11-04,Itaituba – Tapajós,CFSv2 (init 2026-06-28),167.43\n2026-11-05,Itaituba – Tapajós,CFSv2 (init 2026-06-28),167.47\n2026-11-06,Itaituba – Tapajós,CFSv2 (init 2026-06-28),167.65\n2026-11-07,Itaituba – Tapajós,CFSv2 (init 2026-06-28),168.01\n2026-11-08,Itaituba – Tapajós,CFSv2 (init 2026-06-28),168.38\n2026-11-09,Itaituba – Tapajós,CFSv2 (init 2026-06-28),168.55\n2026-11-10,Itaituba – Tapajós,CFSv2 (init 2026-06-28),168.71\n2026-11-11,Itaituba – Tapajós,CFSv2 (init 2026-06-28),170.44\n2026-11-12,Itaituba – Tapajós,CFSv2 (init 2026-06-28),172.47\n2026-11-13,Itaituba – Tapajós,CFSv2 (init 2026-06-28),171.74\n2026-11-14,Itaituba – Tapajós,CFSv2 (init 2026-06-28),174.57\n2026-11-15,Itaituba – Tapajós,CFSv2 (init 2026-06-28),176.5\n2026-11-16,Itaituba – Tapajós,CFSv2 (init 2026-06-28),180.38\n2026-11-17,Itaituba – Tapajós,CFSv2 (init 2026-06-28),183.46\n2026-11-18,Itaituba – Tapajós,CFSv2 (init 2026-06-28),190.05\n2026-11-19,Itaituba – Tapajós,CFSv2 (init 2026-06-28),195.28\n2026-11-20,Itaituba – Tapajós,CFSv2 (init 2026-06-28),198.99\n2026-11-21,Itaituba – Tapajós,CFSv2 (init 2026-06-28),202.36\n2026-11-22,Itaituba – Tapajós,CFSv2 (init 2026-06-28),206.6\n2026-11-23,Itaituba – Tapajós,CFSv2 (init 2026-06-28),210.02\n2026-11-24,Itaituba – Tapajós,CFSv2 (init 2026-06-28),216.98\n2026-11-25,Itaituba – Tapajós,CFSv2 (init 2026-06-28),220.91\n2026-11-26,Itaituba – Tapajós,CFSv2 (init 2026-06-28),224.23\n2026-11-27,Itaituba – Tapajós,CFSv2 (init 2026-06-28),225.8\n2026-11-28,Itaituba – Tapajós,CFSv2 (init 2026-06-28),229.89\n2026-11-29,Itaituba – Tapajós,CFSv2 (init 2026-06-28),232.46\n2026-11-30,Itaituba – Tapajós,CFSv2 (init 2026-06-28),234.71\n2026-12-01,Itaituba – Tapajós,CFSv2 (init 2026-06-28),236.93\n2026-12-02,Itaituba – Tapajós,CFSv2 (init 2026-06-28),239.49\n2026-12-03,Itaituba – Tapajós,CFSv2 (init 2026-06-28),242.81\n2026-12-04,Itaituba – Tapajós,CFSv2 (init 2026-06-28),245.56\n2026-12-05,Itaituba – Tapajós,CFSv2 (init 2026-06-28),250.56\n2026-12-06,Itaituba – Tapajós,CFSv2 (init 2026-06-28),255.48\n2026-12-07,Itaituba – Tapajós,CFSv2 (init 2026-06-28),261.05\n2026-12-08,Itaituba – Tapajós,CFSv2 (init 2026-06-28),265.5\n2026-12-09,Itaituba – Tapajós,CFSv2 (init 2026-06-28),278.14\n2026-12-10,Itaituba – Tapajós,CFSv2 (init 2026-06-28),285.22\n2026-12-11,Itaituba – Tapajós,CFSv2 (init 2026-06-28),291.61\n2026-12-12,Itaituba – Tapajós,CFSv2 (init 2026-06-28),296.59\n2026-12-13,Itaituba – Tapajós,CFSv2 (init 2026-06-28),302.95\n2026-12-14,Itaituba – Tapajós,CFSv2 (init 2026-06-28),309.48\n2026-12-15,Itaituba – Tapajós,CFSv2 (init 2026-06-28),322.8\n2026-12-16,Itaituba – Tapajós,CFSv2 (init 2026-06-28),330.19\n2026-12-17,Itaituba – Tapajós,CFSv2 (init 2026-06-28),339.85\n2026-12-18,Itaituba – Tapajós,CFSv2 (init 2026-06-28),347.51\n2026-12-19,Itaituba – Tapajós,CFSv2 (init 2026-06-28),353.98\n2026-12-20,Itaituba – Tapajós,CFSv2 (init 2026-06-28),361.0\n2026-12-21,Itaituba – Tapajós,CFSv2 (init 2026-06-28),367.83\n2026-12-22,Itaituba – Tapajós,CFSv2 (init 2026-06-28),378.7\n2026-12-23,Itaituba – Tapajós,CFSv2 (init 2026-06-28),390.91\n2026-12-24,Itaituba – Tapajós,CFSv2 (init 2026-06-28),399.55\n2026-12-25,Itaituba – Tapajós,CFSv2 (init 2026-06-28),404.41\n2026-12-26,Itaituba – Tapajós,CFSv2 (init 2026-06-28),408.19\n2026-12-27,Itaituba – Tapajós,CFSv2 (init 2026-06-28),412.08\n2026-12-28,Itaituba – Tapajós,CFSv2 (init 2026-06-28),415.04\n2026-12-29,Itaituba – Tapajós,CFSv2 (init 2026-06-28),418.2\n2026-12-30,Itaituba – Tapajós,CFSv2 (init 2026-06-28),422.64\n2026-12-31,Itaituba – Tapajós,CFSv2 (init 2026-06-28),425.5\n2026-07-06,Itaituba – Tapajós,CFSv2 (init 2026-06-21),630.72\n2026-07-07,Itaituba – Tapajós,CFSv2 (init 2026-06-21),626.68\n2026-07-08,Itaituba – Tapajós,CFSv2 (init 2026-06-21),622.79\n2026-07-09,Itaituba – Tapajós,CFSv2 (init 2026-06-21),619.13\n2026-07-10,Itaituba – Tapajós,CFSv2 (init 2026-06-21),614.92\n2026-07-11,Itaituba – Tapajós,CFSv2 (init 2026-06-21),610.68\n2026-07-12,Itaituba – Tapajós,CFSv2 (init 2026-06-21),606.37\n2026-07-13,Itaituba – Tapajós,CFSv2 (init 2026-06-21),601.85\n2026-07-14,Itaituba – Tapajós,CFSv2 (init 2026-06-21),597.38\n2026-07-15,Itaituba – Tapajós,CFSv2 (init 2026-06-21),593.18\n2026-07-16,Itaituba – Tapajós,CFSv2 (init 2026-06-21),590.21\n2026-07-17,Itaituba – Tapajós,CFSv2 (init 2026-06-21),587.39\n2026-07-18,Itaituba – Tapajós,CFSv2 (init 2026-06-21),583.31\n2026-07-19,Itaituba – Tapajós,CFSv2 (init 2026-06-21),580.46\n2026-07-20,Itaituba – Tapajós,CFSv2 (init 2026-06-21),577.77\n2026-07-21,Itaituba – Tapajós,CFSv2 (init 2026-06-21),574.49\n2026-07-22,Itaituba – Tapajós,CFSv2 (init 2026-06-21),571.97\n2026-07-23,Itaituba – Tapajós,CFSv2 (init 2026-06-21),568.3\n2026-07-24,Itaituba – Tapajós,CFSv2 (init 2026-06-21),565.22\n2026-07-25,Itaituba – Tapajós,CFSv2 (init 2026-06-21),562.63\n2026-07-26,Itaituba – Tapajós,CFSv2 (init 2026-06-21),559.73\n2026-07-27,Itaituba – Tapajós,CFSv2 (init 2026-06-21),556.5\n2026-07-28,Itaituba – Tapajós,CFSv2 (init 2026-06-21),553.75\n2026-07-29,Itaituba – Tapajós,CFSv2 (init 2026-06-21),551.69\n2026-07-30,Itaituba – Tapajós,CFSv2 (init 2026-06-21),551.04\n2026-07-31,Itaituba – Tapajós,CFSv2 (init 2026-06-21),548.92\n2026-08-01,Itaituba – Tapajós,CFSv2 (init 2026-06-21),545.62\n2026-08-02,Itaituba – Tapajós,CFSv2 (init 2026-06-21),542.57\n2026-08-03,Itaituba – Tapajós,CFSv2 (init 2026-06-21),538.45\n2026-08-04,Itaituba – Tapajós,CFSv2 (init 2026-06-21),533.94\n2026-08-05,Itaituba – Tapajós,CFSv2 (init 2026-06-21),529.64\n2026-08-06,Itaituba – Tapajós,CFSv2 (init 2026-06-21),525.79\n2026-08-07,Itaituba – Tapajós,CFSv2 (init 2026-06-21),522.92\n2026-08-08,Itaituba – Tapajós,CFSv2 (init 2026-06-21),519.49\n2026-08-09,Itaituba – Tapajós,CFSv2 (init 2026-06-21),516.29\n2026-08-10,Itaituba – Tapajós,CFSv2 (init 2026-06-21),512.77\n2026-08-11,Itaituba – Tapajós,CFSv2 (init 2026-06-21),508.94\n2026-08-12,Itaituba – Tapajós,CFSv2 (init 2026-06-21),504.56\n2026-08-13,Itaituba – Tapajós,CFSv2 (init 2026-06-21),499.49\n2026-08-14,Itaituba – Tapajós,CFSv2 (init 2026-06-21),493.32\n2026-08-15,Itaituba – Tapajós,CFSv2 (init 2026-06-21),486.75\n2026-08-16,Itaituba – Tapajós,CFSv2 (init 2026-06-21),480.54\n2026-08-17,Itaituba – Tapajós,CFSv2 (init 2026-06-21),474.91\n2026-08-18,Itaituba – Tapajós,CFSv2 (init 2026-06-21),469.93\n2026-08-19,Itaituba – Tapajós,CFSv2 (init 2026-06-21),465.09\n2026-08-20,Itaituba – Tapajós,CFSv2 (init 2026-06-21),460.46\n2026-08-21,Itaituba – Tapajós,CFSv2 (init 2026-06-21),455.3\n2026-08-22,Itaituba – Tapajós,CFSv2 (init 2026-06-21),449.92\n2026-08-23,Itaituba – Tapajós,CFSv2 (init 2026-06-21),445.06\n2026-08-24,Itaituba – Tapajós,CFSv2 (init 2026-06-21),440.06\n2026-08-25,Itaituba – Tapajós,CFSv2 (init 2026-06-21),435.25\n2026-08-26,Itaituba – Tapajós,CFSv2 (init 2026-06-21),430.42\n2026-08-27,Itaituba – Tapajós,CFSv2 (init 2026-06-21),426.5\n2026-08-28,Itaituba – Tapajós,CFSv2 (init 2026-06-21),421.87\n2026-08-29,Itaituba – Tapajós,CFSv2 (init 2026-06-21),418.34\n2026-08-30,Itaituba – Tapajós,CFSv2 (init 2026-06-21),413.94\n2026-08-31,Itaituba – Tapajós,CFSv2 (init 2026-06-21),410.38\n2026-09-01,Itaituba – Tapajós,CFSv2 (init 2026-06-21),406.14\n2026-09-02,Itaituba – Tapajós,CFSv2 (init 2026-06-21),401.27\n2026-09-03,Itaituba – Tapajós,CFSv2 (init 2026-06-21),395.93\n2026-09-04,Itaituba – Tapajós,CFSv2 (init 2026-06-21),390.12\n2026-09-05,Itaituba – Tapajós,CFSv2 (init 2026-06-21),384.03\n2026-09-06,Itaituba – Tapajós,CFSv2 (init 2026-06-21),377.65\n2026-09-07,Itaituba – Tapajós,CFSv2 (init 2026-06-21),370.58\n2026-09-08,Itaituba – Tapajós,CFSv2 (init 2026-06-21),363.14\n2026-09-09,Itaituba – Tapajós,CFSv2 (init 2026-06-21),355.43\n2026-09-10,Itaituba – Tapajós,CFSv2 (init 2026-06-21),347.62\n2026-09-11,Itaituba – Tapajós,CFSv2 (init 2026-06-21),339.72\n2026-09-12,Itaituba – Tapajós,CFSv2 (init 2026-06-21),331.61\n2026-09-13,Itaituba – Tapajós,CFSv2 (init 2026-06-21),323.34\n2026-09-14,Itaituba – Tapajós,CFSv2 (init 2026-06-21),316.35\n2026-09-15,Itaituba – Tapajós,CFSv2 (init 2026-06-21),307.95\n2026-09-16,Itaituba – Tapajós,CFSv2 (init 2026-06-21),299.81\n2026-09-17,Itaituba – Tapajós,CFSv2 (init 2026-06-21),291.4\n2026-09-18,Itaituba – Tapajós,CFSv2 (init 2026-06-21),283.15\n2026-09-19,Itaituba – Tapajós,CFSv2 (init 2026-06-21),275.24\n2026-09-20,Itaituba – Tapajós,CFSv2 (init 2026-06-21),268.12\n2026-09-21,Itaituba – Tapajós,CFSv2 (init 2026-06-21),260.67\n2026-09-22,Itaituba – Tapajós,CFSv2 (init 2026-06-21),253.77\n2026-09-23,Itaituba – Tapajós,CFSv2 (init 2026-06-21),247.4\n2026-09-24,Itaituba – Tapajós,CFSv2 (init 2026-06-21),241.21\n2026-09-25,Itaituba – Tapajós,CFSv2 (init 2026-06-21),235.07\n2026-09-26,Itaituba – Tapajós,CFSv2 (init 2026-06-21),228.51\n2026-09-27,Itaituba – Tapajós,CFSv2 (init 2026-06-21),221.96\n2026-09-28,Itaituba – Tapajós,CFSv2 (init 2026-06-21),215.81\n2026-09-29,Itaituba – Tapajós,CFSv2 (init 2026-06-21),209.35\n2026-09-30,Itaituba – Tapajós,CFSv2 (init 2026-06-21),204.18\n2026-10-01,Itaituba – Tapajós,CFSv2 (init 2026-06-21),198.7\n2026-10-02,Itaituba – Tapajós,CFSv2 (init 2026-06-21),193.85\n2026-10-03,Itaituba – Tapajós,CFSv2 (init 2026-06-21),189.56\n2026-10-04,Itaituba – Tapajós,CFSv2 (init 2026-06-21),184.32\n2026-10-05,Itaituba – Tapajós,CFSv2 (init 2026-06-21),179.23\n2026-10-06,Itaituba – Tapajós,CFSv2 (init 2026-06-21),174.92\n2026-10-07,Itaituba – Tapajós,CFSv2 (init 2026-06-21),171.06\n2026-10-08,Itaituba – Tapajós,CFSv2 (init 2026-06-21),166.86\n2026-10-09,Itaituba – Tapajós,CFSv2 (init 2026-06-21),162.89\n2026-10-10,Itaituba – Tapajós,CFSv2 (init 2026-06-21),159.21\n2026-10-11,Itaituba – Tapajós,CFSv2 (init 2026-06-21),156.19\n2026-10-12,Itaituba – Tapajós,CFSv2 (init 2026-06-21),154.27\n2026-10-13,Itaituba – Tapajós,CFSv2 (init 2026-06-21),152.8\n2026-10-14,Itaituba – Tapajós,CFSv2 (init 2026-06-21),150.99\n2026-10-15,Itaituba – Tapajós,CFSv2 (init 2026-06-21),149.37\n2026-10-16,Itaituba – Tapajós,CFSv2 (init 2026-06-21),147.67\n2026-10-17,Itaituba – Tapajós,CFSv2 (init 2026-06-21),146.11\n2026-10-18,Itaituba – Tapajós,CFSv2 (init 2026-06-21),144.68\n2026-10-19,Itaituba – Tapajós,CFSv2 (init 2026-06-21),144.51\n2026-10-20,Itaituba – Tapajós,CFSv2 (init 2026-06-21),144.22\n2026-10-21,Itaituba – Tapajós,CFSv2 (init 2026-06-21),145.1\n2026-10-22,Itaituba – Tapajós,CFSv2 (init 2026-06-21),144.88\n2026-10-23,Itaituba – Tapajós,CFSv2 (init 2026-06-21),145.43\n2026-10-24,Itaituba – Tapajós,CFSv2 (init 2026-06-21),146.39\n2026-10-25,Itaituba – Tapajós,CFSv2 (init 2026-06-21),151.54\n2026-10-26,Itaituba – Tapajós,CFSv2 (init 2026-06-21),154.66\n2026-10-27,Itaituba – Tapajós,CFSv2 (init 2026-06-21),156.25\n2026-10-28,Itaituba – Tapajós,CFSv2 (init 2026-06-21),157.03\n2026-10-29,Itaituba – Tapajós,CFSv2 (init 2026-06-21),161.62\n2026-10-30,Itaituba – Tapajós,CFSv2 (init 2026-06-21),177.83\n2026-10-31,Itaituba – Tapajós,CFSv2 (init 2026-06-21),180.45\n2026-11-01,Itaituba – Tapajós,CFSv2 (init 2026-06-21),182.29\n2026-11-02,Itaituba – Tapajós,CFSv2 (init 2026-06-21),184.03\n2026-11-03,Itaituba – Tapajós,CFSv2 (init 2026-06-21),187.41\n2026-11-04,Itaituba – Tapajós,CFSv2 (init 2026-06-21),192.11\n2026-11-05,Itaituba – Tapajós,CFSv2 (init 2026-06-21),196.17\n2026-11-06,Itaituba – Tapajós,CFSv2 (init 2026-06-21),198.33\n2026-11-07,Itaituba – Tapajós,CFSv2 (init 2026-06-21),200.44\n2026-11-08,Itaituba – Tapajós,CFSv2 (init 2026-06-21),201.18\n2026-11-09,Itaituba – Tapajós,CFSv2 (init 2026-06-21),202.34\n2026-11-10,Itaituba – Tapajós,CFSv2 (init 2026-06-21),203.05\n2026-11-11,Itaituba – Tapajós,CFSv2 (init 2026-06-21),203.0\n2026-11-12,Itaituba – Tapajós,CFSv2 (init 2026-06-21),204.17\n2026-11-13,Itaituba – Tapajós,CFSv2 (init 2026-06-21),203.96\n2026-11-14,Itaituba – Tapajós,CFSv2 (init 2026-06-21),205.22\n2026-11-15,Itaituba – Tapajós,CFSv2 (init 2026-06-21),206.07\n2026-11-16,Itaituba – Tapajós,CFSv2 (init 2026-06-21),210.51\n2026-11-17,Itaituba – Tapajós,CFSv2 (init 2026-06-21),213.85\n2026-11-18,Itaituba – Tapajós,CFSv2 (init 2026-06-21),217.82\n2026-11-19,Itaituba – Tapajós,CFSv2 (init 2026-06-21),233.57\n2026-11-20,Itaituba – Tapajós,CFSv2 (init 2026-06-21),238.78\n2026-11-21,Itaituba – Tapajós,CFSv2 (init 2026-06-21),242.41\n2026-11-22,Itaituba – Tapajós,CFSv2 (init 2026-06-21),245.9\n2026-11-23,Itaituba – Tapajós,CFSv2 (init 2026-06-21),249.65\n2026-11-24,Itaituba – Tapajós,CFSv2 (init 2026-06-21),253.33\n2026-11-25,Itaituba – Tapajós,CFSv2 (init 2026-06-21),257.21\n2026-11-26,Itaituba – Tapajós,CFSv2 (init 2026-06-21),262.44\n2026-11-27,Itaituba – Tapajós,CFSv2 (init 2026-06-21),265.56\n2026-11-28,Itaituba – Tapajós,CFSv2 (init 2026-06-21),271.03\n2026-11-29,Itaituba – Tapajós,CFSv2 (init 2026-06-21),276.3\n2026-11-30,Itaituba – Tapajós,CFSv2 (init 2026-06-21),280.39\n2026-12-01,Itaituba – Tapajós,CFSv2 (init 2026-06-21),286.09\n2026-12-02,Itaituba – Tapajós,CFSv2 (init 2026-06-21),299.64\n2026-12-03,Itaituba – Tapajós,CFSv2 (init 2026-06-21),304.4\n2026-12-04,Itaituba – Tapajós,CFSv2 (init 2026-06-21),308.02\n2026-12-05,Itaituba – Tapajós,CFSv2 (init 2026-06-21),312.72\n2026-12-06,Itaituba – Tapajós,CFSv2 (init 2026-06-21),317.79\n2026-12-07,Itaituba – Tapajós,CFSv2 (init 2026-06-21),323.85\n2026-12-08,Itaituba – Tapajós,CFSv2 (init 2026-06-21),330.05\n2026-12-09,Itaituba – Tapajós,CFSv2 (init 2026-06-21),335.69\n2026-12-10,Itaituba – Tapajós,CFSv2 (init 2026-06-21),341.36\n2026-12-11,Itaituba – Tapajós,CFSv2 (init 2026-06-21),347.51\n2026-12-12,Itaituba – Tapajós,CFSv2 (init 2026-06-21),357.55\n2026-12-13,Itaituba – Tapajós,CFSv2 (init 2026-06-21),363.54\n2026-12-14,Itaituba – Tapajós,CFSv2 (init 2026-06-21),368.45\n2026-12-15,Itaituba – Tapajós,CFSv2 (init 2026-06-21),374.06\n2026-12-16,Itaituba – Tapajós,CFSv2 (init 2026-06-21),382.68\n2026-12-17,Itaituba – Tapajós,CFSv2 (init 2026-06-21),393.64\n2026-12-18,Itaituba – Tapajós,CFSv2 (init 2026-06-21),401.4\n2026-12-19,Itaituba – Tapajós,CFSv2 (init 2026-06-21),407.89\n2026-12-20,Itaituba – Tapajós,CFSv2 (init 2026-06-21),415.72\n2026-12-21,Itaituba – Tapajós,CFSv2 (init 2026-06-21),422.32\n2026-12-22,Itaituba – Tapajós,CFSv2 (init 2026-06-21),430.85\n2026-12-23,Itaituba – Tapajós,CFSv2 (init 2026-06-21),438.67\n2026-12-24,Itaituba – Tapajós,CFSv2 (init 2026-06-21),446.49\n2026-12-25,Itaituba – Tapajós,CFSv2 (init 2026-06-21),450.72\n2026-12-26,Itaituba – Tapajós,CFSv2 (init 2026-06-21),453.8\n2026-12-27,Itaituba – Tapajós,CFSv2 (init 2026-06-21),456.67\n2026-12-28,Itaituba – Tapajós,CFSv2 (init 2026-06-21),461.7\n2026-12-29,Itaituba – Tapajós,CFSv2 (init 2026-06-21),466.43\n2026-12-30,Itaituba – Tapajós,CFSv2 (init 2026-06-21),471.28\n2026-12-31,Itaituba – Tapajós,CFSv2 (init 2026-06-21),475.12\n2026-07-06,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),630.69\n2026-07-07,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),626.97\n2026-07-08,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),623.92\n2026-07-09,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),620.66\n2026-07-10,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),616.89\n2026-07-11,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),613.42\n2026-07-12,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),609.53\n2026-07-13,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),606.07\n2026-07-14,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),602.53\n2026-07-15,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),599.28\n2026-07-16,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),597.24\n2026-07-17,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),596.45\n2026-07-18,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),593.69\n2026-07-19,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),592.52\n2026-07-20,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),591.37\n2026-07-21,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),589.08\n2026-07-22,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),586.97\n2026-07-23,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),583.81\n2026-07-24,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),580.82\n2026-07-25,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),578.21\n2026-07-26,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),575.67\n2026-07-27,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),572.83\n2026-07-28,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),570.32\n2026-07-29,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),568.44\n2026-07-30,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),567.4\n2026-07-31,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),565.22\n2026-08-01,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),562.76\n2026-08-02,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),559.79\n2026-08-03,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),555.97\n2026-08-04,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),552.26\n2026-08-05,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),548.45\n2026-08-06,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),545.35\n2026-08-07,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),543.37\n2026-08-08,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),540.94\n2026-08-09,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),538.5\n2026-08-10,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),536.25\n2026-08-11,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),533.4\n2026-08-12,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),529.98\n2026-08-13,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),525.97\n2026-08-14,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),519.79\n2026-08-15,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),513.95\n2026-08-16,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),508.73\n2026-08-17,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),503.72\n2026-08-18,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),499.35\n2026-08-19,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),495.3\n2026-08-20,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),490.99\n2026-08-21,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),486.73\n2026-08-22,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),481.78\n2026-08-23,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),477.12\n2026-08-24,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),472.5\n2026-08-25,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),468.83\n2026-08-26,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),465.48\n2026-08-27,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),462.03\n2026-08-28,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),458.26\n2026-08-29,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),455.56\n2026-08-30,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),452.25\n2026-08-31,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),449.74\n2026-09-01,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),446.63\n2026-09-02,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),443.08\n2026-09-03,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),438.42\n2026-09-04,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),433.35\n2026-09-05,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),428.48\n2026-09-06,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),422.85\n2026-09-07,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),416.36\n2026-09-08,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),409.5\n2026-09-09,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),402.42\n2026-09-10,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),394.86\n2026-09-11,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),387.54\n2026-09-12,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),380.05\n2026-09-13,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),372.4\n2026-09-14,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),365.48\n2026-09-15,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),358.35\n2026-09-16,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),351.08\n2026-09-17,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),343.83\n2026-09-18,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),336.6\n2026-09-19,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),329.47\n2026-09-20,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),323.19\n2026-09-21,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),316.07\n2026-09-22,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),309.37\n2026-09-23,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),303.53\n2026-09-24,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),297.91\n2026-09-25,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),292.8\n2026-09-26,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),286.58\n2026-09-27,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),280.63\n2026-09-28,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),274.42\n2026-09-29,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),268.58\n2026-09-30,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),263.63\n2026-10-01,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),258.64\n2026-10-02,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),254.9\n2026-10-03,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),251.6\n2026-10-04,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),247.07\n2026-10-05,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),242.72\n2026-10-06,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),238.63\n2026-10-07,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),235.3\n2026-10-08,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),231.52\n2026-10-09,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),228.24\n2026-10-10,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),225.51\n2026-10-11,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),223.31\n2026-10-12,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),222.27\n2026-10-13,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),221.17\n2026-10-14,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),220.13\n2026-10-15,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),218.86\n2026-10-16,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),217.51\n2026-10-17,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),216.5\n2026-10-18,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),215.56\n2026-10-19,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),215.59\n2026-10-20,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),215.46\n2026-10-21,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),216.27\n2026-10-22,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),216.57\n2026-10-23,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),216.83\n2026-10-24,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),217.66\n2026-10-25,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),219.36\n2026-10-26,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),221.81\n2026-10-27,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),223.52\n2026-10-28,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),224.51\n2026-10-29,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),226.01\n2026-10-30,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),227.94\n2026-10-31,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),229.94\n2026-11-01,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),232.09\n2026-11-02,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),233.92\n2026-11-03,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),235.53\n2026-11-04,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),237.45\n2026-11-05,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),238.06\n2026-11-06,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),239.38\n2026-11-07,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),240.17\n2026-11-08,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),240.73\n2026-11-09,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),240.78\n2026-11-10,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),240.86\n2026-11-11,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),240.89\n2026-11-12,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),242.63\n2026-11-13,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),242.07\n2026-11-14,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),242.4\n2026-11-15,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),243.59\n2026-11-16,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),246.66\n2026-11-17,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),249.15\n2026-11-18,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),252.95\n2026-11-19,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),256.73\n2026-11-20,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),260.94\n2026-11-21,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),264.91\n2026-11-22,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),269.4\n2026-11-23,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),273.08\n2026-11-24,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),277.32\n2026-11-25,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),281.58\n2026-11-26,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),284.68\n2026-11-27,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),287.5\n2026-11-28,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),291.92\n2026-11-29,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),295.32\n2026-11-30,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),299.24\n2026-12-01,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),302.44\n2026-12-02,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),306.02\n2026-12-03,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),309.23\n2026-12-04,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),312.82\n2026-12-05,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),316.38\n2026-12-06,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),320.39\n2026-12-07,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),326.09\n2026-12-08,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),331.3\n2026-12-09,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),336.47\n2026-12-10,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),343.49\n2026-12-11,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),350.89\n2026-12-12,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),358.43\n2026-12-13,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),364.69\n2026-12-14,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),370.05\n2026-12-15,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),376.53\n2026-12-16,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),382.01\n2026-12-17,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),388.78\n2026-12-18,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),396.35\n2026-12-19,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),403.15\n2026-12-20,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),410.47\n2026-12-21,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),417.64\n2026-12-22,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),423.91\n2026-12-23,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),431.41\n2026-12-24,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),437.67\n2026-12-25,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),443.28\n2026-12-26,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),446.92\n2026-12-27,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),450.91\n2026-12-28,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),455.05\n2026-12-29,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),458.83\n2026-12-30,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),463.48\n2026-12-31,Itaituba – Tapajós,ECMWF SEAS (init 2026-07-01),467.36\n2026-07-06,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),631.31\n2026-07-07,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),628.33\n2026-07-08,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),625.25\n2026-07-09,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),622.35\n2026-07-10,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),619.0\n2026-07-11,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),615.81\n2026-07-12,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),612.62\n2026-07-13,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),609.21\n2026-07-14,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),605.99\n2026-07-15,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),602.28\n2026-07-16,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),599.8\n2026-07-17,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),597.74\n2026-07-18,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),594.38\n2026-07-19,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),592.08\n2026-07-20,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),590.09\n2026-07-21,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),587.91\n2026-07-22,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),586.25\n2026-07-23,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),583.25\n2026-07-24,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),580.62\n2026-07-25,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),577.61\n2026-07-26,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),575.1\n2026-07-27,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),572.46\n2026-07-28,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),570.69\n2026-07-29,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),569.21\n2026-07-30,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),568.34\n2026-07-31,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),566.19\n2026-08-01,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),563.53\n2026-08-02,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),560.23\n2026-08-03,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),556.45\n2026-08-04,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),552.54\n2026-08-05,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),548.74\n2026-08-06,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),545.6\n2026-08-07,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),543.66\n2026-08-08,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),540.99\n2026-08-09,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),538.71\n2026-08-10,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),535.7\n2026-08-11,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),532.71\n2026-08-12,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),529.12\n2026-08-13,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),524.93\n2026-08-14,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),518.78\n2026-08-15,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),512.79\n2026-08-16,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),507.26\n2026-08-17,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),502.32\n2026-08-18,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),498.17\n2026-08-19,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),494.06\n2026-08-20,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),489.94\n2026-08-21,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),485.48\n2026-08-22,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),480.54\n2026-08-23,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),476.03\n2026-08-24,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),471.62\n2026-08-25,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),467.37\n2026-08-26,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),463.05\n2026-08-27,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),459.84\n2026-08-28,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),455.88\n2026-08-29,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),453.17\n2026-08-30,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),449.6\n2026-08-31,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),447.26\n2026-09-01,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),443.75\n2026-09-02,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),439.57\n2026-09-03,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),434.81\n2026-09-04,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),429.56\n2026-09-05,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),423.88\n2026-09-06,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),418.08\n2026-09-07,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),411.56\n2026-09-08,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),404.84\n2026-09-09,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),397.52\n2026-09-10,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),391.31\n2026-09-11,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),384.23\n2026-09-12,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),377.01\n2026-09-13,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),369.28\n2026-09-14,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),363.01\n2026-09-15,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),355.22\n2026-09-16,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),348.15\n2026-09-17,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),340.25\n2026-09-18,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),333.22\n2026-09-19,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),326.37\n2026-09-20,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),319.92\n2026-09-21,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),313.05\n2026-09-22,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),306.83\n2026-09-23,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),300.94\n2026-09-24,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),294.94\n2026-09-25,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),288.98\n2026-09-26,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),282.91\n2026-09-27,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),277.47\n2026-09-28,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),271.74\n2026-09-29,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),265.82\n2026-09-30,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),260.88\n2026-10-01,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),256.38\n2026-10-02,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),252.14\n2026-10-03,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),248.52\n2026-10-04,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),244.2\n2026-10-05,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),240.33\n2026-10-06,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),236.73\n2026-10-07,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),233.86\n2026-10-08,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),230.67\n2026-10-09,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),227.5\n2026-10-10,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),224.24\n2026-10-11,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),221.87\n2026-10-12,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),221.14\n2026-10-13,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),220.95\n2026-10-14,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),219.77\n2026-10-15,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),218.77\n2026-10-16,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),217.99\n2026-10-17,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),217.2\n2026-10-18,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),216.68\n2026-10-19,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),216.61\n2026-10-20,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),216.85\n2026-10-21,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),218.48\n2026-10-22,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),218.88\n2026-10-23,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),219.12\n2026-10-24,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),220.01\n2026-10-25,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),222.39\n2026-10-26,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),224.86\n2026-10-27,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),226.74\n2026-10-28,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),228.29\n2026-10-29,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),229.73\n2026-10-30,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),231.81\n2026-10-31,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),233.65\n2026-11-01,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),235.63\n2026-11-02,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),237.3\n2026-11-03,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),239.0\n2026-11-04,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),240.99\n2026-11-05,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),241.71\n2026-11-06,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),243.68\n2026-11-07,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),245.23\n2026-11-08,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),246.85\n2026-11-09,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),248.02\n2026-11-10,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),249.77\n2026-11-11,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),250.6\n2026-11-12,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),252.45\n2026-11-13,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),252.83\n2026-11-14,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),254.7\n2026-11-15,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),256.23\n2026-11-16,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),259.61\n2026-11-17,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),262.73\n2026-11-18,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),266.53\n2026-11-19,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),270.9\n2026-11-20,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),275.73\n2026-11-21,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),281.05\n2026-11-22,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),284.92\n2026-11-23,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),289.24\n2026-11-24,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),293.91\n2026-11-25,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),299.03\n2026-11-26,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),302.23\n2026-11-27,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),306.57\n2026-11-28,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),311.2\n2026-11-29,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),314.93\n2026-11-30,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),319.11\n2026-12-01,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),322.27\n2026-12-02,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),326.71\n2026-12-03,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),332.11\n2026-12-04,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),335.85\n2026-12-05,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),341.6\n2026-12-06,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),348.7\n2026-12-07,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),356.22\n2026-12-08,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),362.18\n2026-12-09,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),369.11\n2026-12-10,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),376.87\n2026-12-11,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),384.72\n2026-12-12,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),391.44\n2026-12-13,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),399.09\n2026-12-14,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),407.63\n2026-12-15,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),414.46\n2026-12-16,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),420.9\n2026-12-17,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),428.89\n2026-12-18,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),437.24\n2026-12-19,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),444.91\n2026-12-20,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),453.17\n2026-12-21,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),461.75\n2026-12-22,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),470.36\n2026-12-23,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),478.96\n2026-12-24,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),487.4\n2026-12-25,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),494.26\n2026-12-26,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),499.73\n2026-12-27,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),504.81\n2026-12-28,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),509.51\n2026-12-29,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),514.68\n2026-12-30,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),520.23\n2026-12-31,Itaituba – Tapajós,ECMWF SEAS (init 2026-06-01),525.66\n2026-06-21,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),1.5243428636874472\n2026-06-22,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),21.070799789790595\n2026-06-29,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),11.71182839590169\n2026-07-06,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),1.580914277405966\n2026-07-13,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),2.762742864943686\n2026-07-20,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),5.311542792689233\n2026-07-27,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),4.3745142459159805\n2026-08-03,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),4.994742888425078\n2026-08-10,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),3.498171403294518\n2026-08-17,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),3.7254856938407537\n2026-08-24,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),1.918285687409696\n2026-08-31,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),2.1250285768792745\n2026-09-07,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),1.7300571146465484\n2026-09-14,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),1.0532571329247384\n2026-09-21,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),1.1447999825080235\n2026-09-28,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),1.2332571624290374\n2026-10-05,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),5.042057186365128\n2026-10-12,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),8.638971500453495\n2026-10-19,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),12.356228376428287\n2026-10-26,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),23.2148574487794\n2026-11-02,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),22.202742719579312\n2026-11-09,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),21.83657144755125\n2026-11-16,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),38.156914190522265\n2026-11-23,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),24.009942789162906\n2026-11-30,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),33.6805714613625\n2026-12-07,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),41.12022858645235\n2026-12-14,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),41.3033141468962\n2026-12-21,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),33.79165686489571\n2026-12-28,Itaituba – Tapajós,CFSv2 Mean Precip (mm/week),17.663657065303553\n";
+
+    function splitCsvLine(line) {
+        const out = []; let cur = ''; let q = false;
+        for (let i = 0; i < line.length; i++) {
+            const c = line[i];
+            if (c === '"') { if (q && line[i + 1] === '"') { cur += '"'; i++; } else q = !q; }
+            else if (c === ',' && !q) { out.push(cur); cur = ''; }
+            else cur += c;
+        }
+        out.push(cur);
+        return out;
+    }
+
+    function parseForecastOficialCSV(text, fonte) {
+        const linhas = String(text).split(/\r?\n/).filter(l => l.trim().length);
+        if (!linhas.length) throw new Error('Arquivo vazio');
+
+        const header = splitCsvLine(linhas[0]).map(h => h.trim().toLowerCase());
+        const idxDate    = header.findIndex(h => /^date$|data|dt/.test(h));
+        const idxStation = header.findIndex(h => /station|esta[cç]/.test(h));
+        const idxSeries  = header.findIndex(h => /series|s[ée]rie|modelo/.test(h));
+        const idxVal     = header.findIndex(h => /forecast|value|valor|n[ií]vel|level|precip/.test(h));
+        const temHeader  = idxDate !== -1 && idxSeries !== -1;
+        const di  = temHeader ? idxDate : 0;
+        const si  = temHeader ? (idxStation !== -1 ? idxStation : 1) : 1;
+        const sei = temHeader ? idxSeries : 2;
+        const vi  = temHeader ? (idxVal !== -1 ? idxVal : 3) : 3;
+        const corpo = temHeader ? linhas.slice(1) : linhas;
+
+        const series = {}, precip = {}, seriesOrder = [], precipOrder = [];
+        let estacao = '';
+        corpo.forEach(l => {
+            const p = splitCsvLine(l);
+            if (p.length < 3) return;
+            const dataISO = parseDateToISO(p[di]);
+            const serie   = String(p[sei] ?? '').trim();
+            const valor   = parseFloat(String(p[vi] ?? '').replace(',', '.'));
+            if (!dataISO || !serie || !Number.isFinite(valor)) return;
+            if (!estacao && p[si]) estacao = String(p[si]).trim();
+            const ehPrecip = /precip|chuva|mm\/|mm\b/i.test(serie);
+            const alvo  = ehPrecip ? precip : series;
+            const ordem = ehPrecip ? precipOrder : seriesOrder;
+            if (!alvo[serie]) { alvo[serie] = []; ordem.push(serie); }
+            alvo[serie].push({ date: dataISO, valor });
+        });
+
+        [series, precip].forEach(obj => Object.values(obj).forEach(arr => arr.sort((a, b) => a.date < b.date ? -1 : 1)));
+
+        if (!seriesOrder.length) throw new Error('Nenhuma série de nível encontrada no arquivo.');
+
+        // Detecta unidade do nível: régua em metros costuma ser < 30; em cm, > 100.
+        let maxNivel = 0;
+        Object.values(series).forEach(arr => arr.forEach(p => { if (p.valor > maxNivel) maxNivel = p.valor; }));
+        const emCm = maxNivel > 30;
+        if (emCm) Object.values(series).forEach(arr => arr.forEach(p => { p.valor = p.valor / 100; }));
+
+        return {
+            fonte: fonte || 'arquivo',
+            atualizadoEm: new Date().toISOString(),
+            estacao: estacao || '—',
+            unidadeOriginal: emCm ? 'cm' : 'm',
+            series, seriesOrder, precip, precipOrder
+        };
+    }
+
+    function ensureForecastOficial() {
+        if (forecastOficial) return forecastOficial;
+        try {
+            forecastOficial = parseForecastOficialCSV(OFICIAL_CSV_EMBUTIDO, 'base embutida (repositório)');
+        } catch (e) {
+            console.error('Falha ao carregar base oficial embutida:', e);
+            forecastOficial = null;
+        }
+        return forecastOficial;
+    }
+
+    // Deriva os cenários mensais (envelope entre modelos) a partir das séries de nível.
+    // mensal[ano][mes] = { medio, otimista(=máx), pessimista(=mín), nSeries }
+    function getOficialMensal() {
+        if (!forecastOficial) return null;
+        if (forecastOficial._mensal) return forecastOficial._mensal;
+        const acc = {};
+        forecastOficial.seriesOrder.forEach(nome => {
+            forecastOficial.series[nome].forEach(p => {
+                const d = new Date(p.date + 'T00:00:00');
+                if (isNaN(d.getTime())) return;
+                const y = d.getFullYear(), m = d.getMonth();
+                (acc[y] = acc[y] || {});
+                (acc[y][m] = acc[y][m] || {});
+                const cell = acc[y][m];
+                (cell[nome] = cell[nome] || { soma: 0, n: 0 });
+                cell[nome].soma += p.valor; cell[nome].n++;
+            });
+        });
+        const mensal = {};
+        Object.keys(acc).forEach(y => {
+            mensal[y] = {};
+            Object.keys(acc[y]).forEach(m => {
+                const medias = Object.values(acc[y][m]).map(s => s.soma / s.n).filter(Number.isFinite);
+                if (!medias.length) return;
+                mensal[y][m] = {
+                    medio: medias.reduce((a, b) => a + b, 0) / medias.length,
+                    otimista: Math.max(...medias),
+                    pessimista: Math.min(...medias),
+                    nSeries: medias.length
+                };
+            });
+        });
+        forecastOficial._mensal = mensal;
+        return mensal;
+    }
+
+    // Vincula a base oficial a um rio: se houver 1 rio, aplica a ele; se houver vários,
+    // casa pelo nome da estação (tokens em comum, sem acento).
+    function rioMatchesOficial(nomeRio) {
+        if (!forecastOficial) return false;
+        const rios = [...new Set(dadosRios.map(r => r.nome))];
+        if (rios.length <= 1) return true;
+        const norm = s => (s || '').toString().toLowerCase().normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+        const tokens = norm(forecastOficial.estacao).split(' ').filter(t => t.length >= 3);
+        const rn = norm(nomeRio);
+        return tokens.some(t => rn.includes(t));
+    }
+
+    function getOficialCenarioAnoMes(nomeRio, ano, mes, cenario) {
+        if (forecastBase !== 'oficial' || !forecastOficial) return null;
+        if (!rioMatchesOficial(nomeRio)) return null;
+        const mensal = getOficialMensal();
+        const cell = mensal && mensal[ano] && mensal[ano][mes];
+        if (!cell) return null;
+        if (cenario === 'otimista')   return Math.max(0, cell.otimista);
+        if (cenario === 'pessimista') return Math.max(0, cell.pessimista);
+        return Math.max(0, cell.medio); // médio + cenários custom -> mediana oficial
+    }
+
+    function setForecastBase(base) {
+        base = (base === 'oficial') ? 'oficial' : 'simulada';
+        if (base === 'oficial') ensureForecastOficial();
+        forecastBase = base;
+        invalidarCacheProjecao();
+        saveToLocalStorage();
+        renderForecastBaseUI();
+        updateAllViews();
+    }
+
+    function toggleMostrarPrecip(v) {
+        mostrarPrecip = (v !== undefined) ? !!v : !mostrarPrecip;
+        saveToLocalStorage();
+        renderForecastBaseUI();
+        updateRioChart();
+    }
+
+    function handleForecastOficialUpload(input) {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = e => {
+            try {
+                const nome = file.name.toLowerCase();
+                let text;
+                if (nome.endsWith('.xlsx') || nome.endsWith('.xls')) {
+                    const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+                    text = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);
+                } else {
+                    text = new TextDecoder('utf-8').decode(new Uint8Array(e.target.result));
+                }
+                const parsed = parseForecastOficialCSV(text, file.name);
+                forecastOficial = parsed;
+                forecastBase = 'oficial';
+                invalidarCacheProjecao();
+                saveToLocalStorage();
+                renderForecastBaseUI();
+                updateAllViews();
+                alert(`Base oficial atualizada: ${parsed.seriesOrder.length} série(s) de nível`
+                    + (parsed.precipOrder.length ? ` e ${parsed.precipOrder.length} de precipitação` : '')
+                    + ` (estação ${parsed.estacao}).`
+                    + (parsed.unidadeOriginal === 'cm' ? '\nNíveis convertidos de cm para metros.' : ''));
+            } catch (err) { alert('Erro ao ler base oficial: ' + err.message); }
+        };
+        reader.readAsArrayBuffer(file);
+        input.value = '';
+    }
+
+    function renderForecastBaseUI() {
+        const btnSim = document.getElementById('btnBaseSimulada');
+        const btnOfi = document.getElementById('btnBaseOficial');
+        if (btnSim && btnOfi) {
+            const on  = 'text-xs px-3 py-1 font-medium transition-colors bg-blue-600 text-white';
+            const off = 'text-xs px-3 py-1 font-medium transition-colors bg-white text-gray-600 hover:bg-gray-50';
+            btnSim.className = forecastBase === 'simulada' ? on : off;
+            btnOfi.className = forecastBase === 'oficial' ? on : off;
+        }
+        const st = document.getElementById('forecastOficialStatus');
+        if (st) {
+            if (forecastOficial) {
+                const rios = [...new Set(dadosRios.map(r => r.nome))];
+                const vinc = rios.filter(rioMatchesOficial);
+                const rioVinc = !rios.length ? '—' : (vinc.length ? vinc.join(', ') : 'nenhum (sem correspondência de nome)');
+                st.innerHTML = `Base oficial — Fonte: <b>${forecastOficial.fonte}</b> · Estação: <b>${forecastOficial.estacao}</b> · `
+                    + `${forecastOficial.seriesOrder.length} série(s) de nível`
+                    + (forecastOficial.precipOrder.length ? ` · ${forecastOficial.precipOrder.length} de precipitação` : '')
+                    + ` · Rio vinculado: <b>${rioVinc}</b>`;
+            } else {
+                st.textContent = 'Nenhuma base oficial carregada — envie um CSV para habilitar a base Oficial.';
+            }
+        }
+        const precipWrap = document.getElementById('wrapTogglePrecip');
+        if (precipWrap) precipWrap.style.display = (forecastOficial && forecastOficial.precipOrder.length) ? '' : 'none';
+        const precipChk = document.getElementById('chkMostrarPrecip');
+        if (precipChk) precipChk.checked = mostrarPrecip;
+    }
+
+    // Monta o dataset de precipitação alinhado aos dias do ano-base (para o eixo secundário).
+    function buildPrecipDataset(anoBase, dailyDates) {
+        if (!mostrarPrecip || !forecastOficial || !forecastOficial.precipOrder.length) return null;
+        const nome = forecastOficial.precipOrder[0];
+        const pts = forecastOficial.precip[nome];
+        const idxByKey = new Map();
+        dailyDates.forEach((d, i) => {
+            const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            idxByKey.set(k, i);
+        });
+        const data = dailyDates.map(() => null);
+        let algum = false;
+        pts.forEach(p => {
+            const d = new Date(p.date + 'T00:00:00');
+            if (isNaN(d.getTime()) || d.getFullYear() !== anoBase) return;
+            const i = idxByKey.get(p.date.substring(0, 10));
+            if (i !== undefined) { data[i] = p.valor; algum = true; }
+        });
+        return algum ? { nome, data } : null;
+    }
+
     function serializeState() {
         const uiFiltros = {
             currentTab:            document.querySelector('.tab-content:not(.hidden)')?.id?.replace('content-','') || 'rios',
@@ -1578,11 +1852,25 @@
             cvCenarioNivel:        document.getElementById('cvCenarioNivel')?.value        || 'medio',
             cvCenarioRota:         document.getElementById('cvCenarioRota')?.value         || '',
             cvChartMode:           _cvChartMode,
-            cvCombSelected:        _cvCombSelected ? [..._cvCombSelected] : null
+            cvCombSelected:        _cvCombSelected ? [..._cvCombSelected] : null,
+            forecastBase,
+            mostrarPrecip
         };
+        // Serializa a base oficial sem o cache derivado (_mensal).
+        const forecastOficialSer = forecastOficial ? {
+            fonte: forecastOficial.fonte,
+            atualizadoEm: forecastOficial.atualizadoEm,
+            estacao: forecastOficial.estacao,
+            unidadeOriginal: forecastOficial.unidadeOriginal,
+            series: forecastOficial.series,
+            seriesOrder: forecastOficial.seriesOrder,
+            precip: forecastOficial.precip,
+            precipOrder: forecastOficial.precipOrder
+        } : null;
         return {
             dadosRios, empurradores, barcacas, rotas, cidadesDemanda, cenariosRotas, variaveis, consumos, registrosConsumo,
             eventosClimaticos,
+            forecastOficial: forecastOficialSer,
             uiFiltros,
             exportDate: new Date().toISOString(),
             version: '2.0'
@@ -1654,6 +1942,10 @@
         aderenciaCenarioSelecionado = data.uiFiltros?.aderenciaCenario ?? null;
         dashCenariosVisiveis = data.uiFiltros?.dashCenariosVisiveis || {};
         dashCenariosNoGrafico = data.uiFiltros?.dashCenariosNoGrafico || {};
+        // Base de forecast (oficial x simulada) e precipitação
+        forecastBase   = (data.uiFiltros?.forecastBase === 'oficial') ? 'oficial' : 'simulada';
+        mostrarPrecip  = !!(data.uiFiltros?.mostrarPrecip);
+        forecastOficial = data.forecastOficial || null;
         // Guarda restantes para aplicar após updateAllViews popular os selects
         _pendingUiFiltros = data.uiFiltros || null;
     }
@@ -1896,6 +2188,7 @@
         updateSelectRios();
         updateFiltroRio();
         renderCaladosToggle();
+        renderForecastBaseUI();
         updateRioChart();
         if (!document.getElementById('content-dashboard').classList.contains('hidden')) updateDashboard();
         if (!document.getElementById('content-resumo').classList.contains('hidden')) renderResumo();
@@ -2559,6 +2852,12 @@
     }
 
     function getNivelRioCenarioAnoMes(nomeRio, ano, mes, cenario) {
+        // Base oficial: substitui a projeção estatística nos meses cobertos pelo CSV.
+        // Meses/anos fora do horizonte oficial caem no cálculo simulado abaixo.
+        if (forecastBase === 'oficial') {
+            const o = getOficialCenarioAnoMes(nomeRio, ano, mes, cenario);
+            if (o !== null && o !== undefined) return o;
+        }
         const anoAtual = new Date().getFullYear();
         const mesAtual = new Date().getMonth();
 
@@ -2606,7 +2905,11 @@
             const datas = dadosRios.map(r => new Date(r.data + 'T00:00:00')).filter(d => !isNaN(d));
             const anosDisponiveis = datas.length ? Math.max(...datas.map(d => d.getFullYear())) - Math.min(...datas.map(d => d.getFullYear())) + 1 : 0;
             const anosUsados = anosDisponiveis > 0 ? Math.min(anos, anosDisponiveis) : anos;
-            notaEl.textContent = `Cenários: média histórica por mês ± desvio-padrão + tendência linear dos últimos ${anosUsados} ano${anosUsados !== 1 ? 's' : ''}${anosUsados < anos ? ` (máximo disponível na base)` : ''}. Visualização e forecast diários com interpolação linear. Piso em 0.`;
+            if (forecastBase === 'oficial' && forecastOficial) {
+                notaEl.textContent = `Base OFICIAL (${forecastOficial.fonte}). Cenários derivados do envelope entre modelos de nível — Médio = média dos modelos, Otimista = maior, Pessimista = menor. Meses fora do horizonte do CSV usam a projeção simulada. Piso em 0.`;
+            } else {
+                notaEl.textContent = `Base SIMULADA. Cenários: média histórica por mês ± desvio-padrão + tendência linear dos últimos ${anosUsados} ano${anosUsados !== 1 ? 's' : ''}${anosUsados < anos ? ` (máximo disponível na base)` : ''}. Visualização e forecast diários com interpolação linear. Piso em 0.`;
+            }
         }
 
         const ctx = document.getElementById('chartRios').getContext('2d');
@@ -2771,7 +3074,9 @@
                 { cor:'#ef4444', label:'Pessimista' }
             ];
             const custom = (variaveis.cenariosCustom || []).map(c => ({ cor: c.cor, label: c.nome }));
-            legendaEl.innerHTML = [...base, ...custom, ...historicosAdicionados].map(l =>
+            const precipChip = (mostrarPrecip && forecastOficial && forecastOficial.precipOrder.length)
+                ? [{ cor:'#38bdf8', label:'Precipitação' }] : [];
+            legendaEl.innerHTML = [...base, ...custom, ...historicosAdicionados, ...precipChip].map(l =>
                 `<span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full shrink-0" style="background:${l.cor}"></span>${l.label}</span>`
             ).join('');
         }
@@ -2807,9 +3112,28 @@
         empurradores.filter(e => e.ativo !== false).forEach(e => addCaladoLine('e-' + e.id, e.nome, e.caladoMin));
         barcacas.filter(b => b.ativo !== false).forEach(b => addCaladoLine('b-' + b.id, b.nome, b.caladoMin));
 
+        // Precipitação (eixo secundário) — independente da base de nível plotada.
+        const precipInfo = buildPrecipDataset(anoBase, dailyDates);
+        if (precipInfo) {
+            datasets.push({
+                type: 'bar',
+                label: precipInfo.nome,
+                data: precipInfo.data,
+                yAxisID: 'yPrecip',
+                backgroundColor: 'rgba(56,189,248,0.55)',
+                borderColor: 'rgba(56,189,248,0.55)',
+                borderWidth: 0,
+                barThickness: 4,
+                categoryPercentage: 1,
+                barPercentage: 1,
+                order: 99
+            });
+        }
+
         // Tooltip com min/max histórico mensal
         const minMes = proj.minMes || [];
         const maxMes = proj.maxMes || [];
+        const baseLabel = (forecastBase === 'oficial') ? 'Oficial' : 'Simulada';
 
         chartRios = new Chart(ctx, {
             type:'line',
@@ -2818,7 +3142,7 @@
                 responsive:true, maintainAspectRatio:false,
                 interaction:{ intersect:false, mode:'index' },
                 plugins:{
-                    title:{ display:true, text: `Projeção: ${rioSel} — ${anoBase}` },
+                    title:{ display:true, text: `Projeção (${baseLabel}): ${rioSel} — ${anoBase}` },
                     legend:{ display:false },
                     tooltip:{
                         callbacks:{
@@ -2828,7 +3152,9 @@
                                 const date = dailyDates[idx];
                                 return `${String(date.getDate()).padStart(2,'0')}/${String(date.getMonth()+1).padStart(2,'0')}/${date.getFullYear()}`;
                             },
-                            label: c => `${c.dataset.label}: ${c.parsed.y?.toFixed(2) ?? '-'} m`,
+                            label: c => (c.dataset.yAxisID === 'yPrecip')
+                                ? `${c.dataset.label}: ${c.parsed.y?.toFixed(1) ?? '-'} mm/sem`
+                                : `${c.dataset.label}: ${c.parsed.y?.toFixed(2) ?? '-'} m`,
                             afterBody: (items) => {
                                 if (!items.length) return [];
                                 const mesIdx = dailyMonths[items[0].dataIndex];
@@ -2855,7 +3181,14 @@
                             autoSkip: false
                         }
                     },
-                    y:{ title:{display:true,text:'Nível (m)'}, beginAtZero:true }
+                    y:{ title:{display:true,text:'Nível (m)'}, beginAtZero:true },
+                    ...(precipInfo ? { yPrecip:{
+                        position:'right',
+                        reverse:true,           // eixo invertido: barras "penduradas" no topo (como na referência)
+                        beginAtZero:true,
+                        title:{ display:true, text:'Precipitação (mm/semana)' },
+                        grid:{ drawOnChartArea:false }
+                    } } : {})
                 }
             }
         });
@@ -5767,7 +6100,7 @@
                 rotaAtivaNoMes(r, mes)
             );
             const niveisEntrega = rotasEntregadoras.map(r => {
-                const nivel = getProjecaoPorMes(r.rio)?.[mes]?.[cenario];
+                const nivel = getNivelRioCenarioAnoMes(r.rio, ano, mes, cenario);
                 if (nivel == null) return null;
                 return nivel + v.abaco - v.faq;
             }).filter(n => n !== null);
