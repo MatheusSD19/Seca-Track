@@ -1505,6 +1505,15 @@
     const MESES_FULL   = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
     const CALADO_CORES = ['#a855f7','#f59e0b','#06b6d4','#ec4899','#84cc16','#f97316'];
 
+    // Cores/estilos das séries da base OFICIAL — espelham a referência LDC (na ordem do CSV):
+    // CFSv2 07-05 vermelho, 06-28 laranja, 06-21 verde; ECMWF pontilhado roxo/lilás.
+    const OFICIAL_CORES = ['#d62728','#ff7f0e','#2ca02c','#9467bd','#c5b0d5','#1f77b4','#8c564b','#e377c2'];
+    function oficialSerieEstilo(nome, idx) {
+        const cor = OFICIAL_CORES[idx % OFICIAL_CORES.length];
+        const pontilhado = /ecmwf|seas/i.test(nome);   // ECMWF SEAS -> pontilhado, como na referência
+        return { cor, dash: pontilhado ? [2, 3] : [7, 4] };
+    }
+
     // Cache de projeção — invalidado sempre que dadosRios ou variaveis mudam
     const _projCache = {};
     function invalidarCacheProjecao() { for (const k in _projCache) delete _projCache[k]; }
@@ -2985,47 +2994,67 @@
             });
         };
 
-        const medioDs = buildDailyCenario('medio');
-        const otimDs  = buildDailyCenario('otimista');
-        const pessDs  = buildDailyCenario('pessimista');
+        const usaOficial = forecastBase === 'oficial' && forecastOficial && rioMatchesOficial(rioSel);
 
-        // Conectar histórico e projeção no último ponto observado
-        if (lastHistIdx >= 0) {
-            const vH = historicoData[lastHistIdx];
-            if (medioDs[lastHistIdx] === null) medioDs[lastHistIdx] = vH;
-            if (otimDs[lastHistIdx]  === null) otimDs[lastHistIdx]  = vH;
-            if (pessDs[lastHistIdx]  === null) pessDs[lastHistIdx]  = vH;
-        }
-
-        // Datasets base — filtrados por cenariosRioOcultos
-        const mostrarOtim = !cenariosRioOcultos.has('otimista');
-        const mostrarPess = !cenariosRioOcultos.has('pessimista');
+        // Sempre começa pela série observada (histórico) — inalterada entre as bases.
         const datasets = [
-            { label:'Histórico',      data: historicoData, borderColor:'#374151', backgroundColor:'#374151', tension:0.1, pointRadius:0, spanGaps:false, borderWidth:2, fill:false },
-            ...(!cenariosRioOcultos.has('medio') ? [{ label:'Projeção Média', data: medioDs, borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,0.08)', borderDash:[6,4], tension:0.1, pointRadius:0, spanGaps:false, fill:false }] : []),
-            ...(mostrarOtim ? [{ label:'Otimista', data: otimDs, borderColor:'#10b981', backgroundColor:'rgba(16,185,129,0.10)', borderDash:[6,4], tension:0.1, pointRadius:0, spanGaps:false, fill: mostrarPess ? '+1' : false }] : []),
-            ...(mostrarPess ? [{ label:'Pessimista', data: pessDs, borderColor:'#ef4444', backgroundColor:'rgba(239,68,68,0.10)', borderDash:[6,4], tension:0.1, pointRadius:0, spanGaps:false, fill:false }] : []),
+            { label:'Histórico', data: historicoData, borderColor:'#374151', backgroundColor:'#374151', tension:0.1, pointRadius:0, spanGaps:false, borderWidth:2, fill:false },
         ];
 
-        // Datasets dos cenários customizados
-        (variaveis.cenariosCustom || []).forEach(c => {
-            if (cenariosRioOcultos.has(String(c.id))) return;
-            const ds = buildDailyCenario(String(c.id));
-            if (lastHistIdx >= 0 && historicoData[lastHistIdx] !== null && ds[lastHistIdx] === null) {
-                ds[lastHistIdx] = historicoData[lastHistIdx];
-            }
-            datasets.push({
-                label: c.nome,
-                data: ds,
-                borderColor: c.cor,
-                backgroundColor: c.cor,
-                borderDash: [3, 3],
-                tension: 0.1,
-                pointRadius: 0,
-                spanGaps: false,
-                borderWidth: 2
+        if (usaOficial) {
+            // BASE OFICIAL — plota cada série do CSV com seus valores diários reais e as
+            // cores da referência. Não usa envelope/interpolação mensal (respeita os dados).
+            forecastOficial.seriesOrder.forEach((nome, idx) => {
+                if (cenariosRioOcultos.has(nome)) return;
+                const pts = forecastOficial.series[nome] || [];
+                const byKey = new Map(pts.map(p => [p.date.substring(0, 10), p.valor]));
+                const data = dailyDates.map(date => {
+                    if (date.getFullYear() !== anoBase) return null;
+                    const v = byKey.get(_fmtKey(date));
+                    return v === undefined ? null : v;
+                });
+                const { cor, dash } = oficialSerieEstilo(nome, idx);
+                datasets.push({
+                    label: nome, data,
+                    borderColor: cor, backgroundColor: cor,
+                    borderDash: dash, borderWidth: 2,
+                    tension: 0.1, pointRadius: 0, spanGaps: false, fill: false
+                });
             });
-        });
+        } else {
+            // BASE SIMULADA — comportamento original (envelope Otimista/Médio/Pessimista).
+            const medioDs = buildDailyCenario('medio');
+            const otimDs  = buildDailyCenario('otimista');
+            const pessDs  = buildDailyCenario('pessimista');
+
+            // Conectar histórico e projeção no último ponto observado
+            if (lastHistIdx >= 0) {
+                const vH = historicoData[lastHistIdx];
+                if (medioDs[lastHistIdx] === null) medioDs[lastHistIdx] = vH;
+                if (otimDs[lastHistIdx]  === null) otimDs[lastHistIdx]  = vH;
+                if (pessDs[lastHistIdx]  === null) pessDs[lastHistIdx]  = vH;
+            }
+
+            const mostrarOtim = !cenariosRioOcultos.has('otimista');
+            const mostrarPess = !cenariosRioOcultos.has('pessimista');
+            if (!cenariosRioOcultos.has('medio')) datasets.push({ label:'Projeção Média', data: medioDs, borderColor:'#3b82f6', backgroundColor:'rgba(59,130,246,0.08)', borderDash:[6,4], tension:0.1, pointRadius:0, spanGaps:false, fill:false });
+            if (mostrarOtim) datasets.push({ label:'Otimista', data: otimDs, borderColor:'#10b981', backgroundColor:'rgba(16,185,129,0.10)', borderDash:[6,4], tension:0.1, pointRadius:0, spanGaps:false, fill: mostrarPess ? '+1' : false });
+            if (mostrarPess) datasets.push({ label:'Pessimista', data: pessDs, borderColor:'#ef4444', backgroundColor:'rgba(239,68,68,0.10)', borderDash:[6,4], tension:0.1, pointRadius:0, spanGaps:false, fill:false });
+
+            // Datasets dos cenários customizados
+            (variaveis.cenariosCustom || []).forEach(c => {
+                if (cenariosRioOcultos.has(String(c.id))) return;
+                const ds = buildDailyCenario(String(c.id));
+                if (lastHistIdx >= 0 && historicoData[lastHistIdx] !== null && ds[lastHistIdx] === null) {
+                    ds[lastHistIdx] = historicoData[lastHistIdx];
+                }
+                datasets.push({
+                    label: c.nome, data: ds,
+                    borderColor: c.cor, backgroundColor: c.cor,
+                    borderDash: [3, 3], tension: 0.1, pointRadius: 0, spanGaps: false, borderWidth: 2
+                });
+            });
+        }
 
         // Overlay de anos históricos selecionados — dados diários reais alinhados por dia-do-ano
         const HIST_CORES_OVERLAY = ['#6b7280','#92400e','#1e40af','#065f46','#7c3aed','#9d174d','#b45309','#0e7490'];
@@ -3067,13 +3096,14 @@
         // Legenda dinâmica no header do card
         const legendaEl = document.getElementById('legendaGraficoRios');
         if (legendaEl) {
-            const base = [
-                { cor:'#374151', label:'Histórico' },
-                { cor:'#10b981', label:'Otimista' },
-                { cor:'#3b82f6', label:'Médio' },
-                { cor:'#ef4444', label:'Pessimista' }
-            ];
-            const custom = (variaveis.cenariosCustom || []).map(c => ({ cor: c.cor, label: c.nome }));
+            const base = usaOficial
+                ? [ { cor:'#374151', label:'Histórico' },
+                    ...forecastOficial.seriesOrder.map((nome, idx) => ({ cor: oficialSerieEstilo(nome, idx).cor, label: nome })) ]
+                : [ { cor:'#374151', label:'Histórico' },
+                    { cor:'#10b981', label:'Otimista' },
+                    { cor:'#3b82f6', label:'Médio' },
+                    { cor:'#ef4444', label:'Pessimista' } ];
+            const custom = usaOficial ? [] : (variaveis.cenariosCustom || []).map(c => ({ cor: c.cor, label: c.nome }));
             const precipChip = (mostrarPrecip && forecastOficial && forecastOficial.precipOrder.length)
                 ? [{ cor:'#38bdf8', label:'Precipitação' }] : [];
             legendaEl.innerHTML = [...base, ...custom, ...historicosAdicionados, ...precipChip].map(l =>
@@ -3185,7 +3215,8 @@
                     ...(precipInfo ? { yPrecip:{
                         position:'right',
                         reverse:true,           // eixo invertido: barras "penduradas" no topo (como na referência)
-                        beginAtZero:true,
+                        min:0,
+                        max:80,                 // escala fixa 0–80 para as barras ocuparem menos altura
                         title:{ display:true, text:'Precipitação (mm/semana)' },
                         grid:{ drawOnChartArea:false }
                     } } : {})
@@ -3360,13 +3391,18 @@
     function renderCenariosRioToggle() {
         const container = document.getElementById('botoesCenariosRio');
         if (!container) return;
-        const base = [
-            { id: 'otimista',   label: 'Otimista',   cor: '#10b981' },
-            { id: 'medio',      label: 'Médio',       cor: '#3b82f6' },
-            { id: 'pessimista', label: 'Pessimista',  cor: '#ef4444' },
-        ];
-        const custom = (variaveis.cenariosCustom || []).map(c => ({ id: c.id, label: c.nome, cor: c.cor }));
-        container.innerHTML = [...base, ...custom].map(c => {
+        const rioSel = getRioSelecionadoNoGrafico();
+        const usaOficial = forecastBase === 'oficial' && forecastOficial && rioMatchesOficial(rioSel);
+        // Na base oficial, os "cenários" são as próprias séries do CSV (com suas cores).
+        const itens = usaOficial
+            ? forecastOficial.seriesOrder.map((nome, idx) => ({ id: nome, label: nome, cor: oficialSerieEstilo(nome, idx).cor }))
+            : [
+                { id: 'otimista',   label: 'Otimista',   cor: '#10b981' },
+                { id: 'medio',      label: 'Médio',       cor: '#3b82f6' },
+                { id: 'pessimista', label: 'Pessimista',  cor: '#ef4444' },
+                ...(variaveis.cenariosCustom || []).map(c => ({ id: c.id, label: c.nome, cor: c.cor }))
+              ];
+        container.innerHTML = itens.map(c => {
             const ativo = !cenariosRioOcultos.has(String(c.id));
             return `<button onclick="toggleCenarioRio('${c.id}')"
                 class="text-xs px-2 py-0.5 rounded-full border font-medium transition-all"
