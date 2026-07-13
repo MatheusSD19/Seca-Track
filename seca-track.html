@@ -188,8 +188,8 @@
                     <div class="flex items-center gap-2">
                         <span class="text-xs font-medium text-gray-600 flex items-center gap-1"><i data-lucide="database" class="w-3 h-3"></i> Base de Forecast:</span>
                         <div class="inline-flex rounded-md border border-gray-300 overflow-hidden">
-                            <button id="btnBaseSimulada" onclick="setForecastBase('simulada')" class="text-xs px-3 py-1 font-medium transition-colors bg-blue-600 text-white" title="Projeção estatística a partir do histórico (comportamento padrão)">Simulada</button>
-                            <button id="btnBaseOficial" onclick="setForecastBase('oficial')" class="text-xs px-3 py-1 font-medium transition-colors bg-white text-gray-600 hover:bg-gray-50" title="Previsão oficial de nível (CSV de modelos CFSv2/ECMWF SEAS)">Oficial</button>
+                            <button data-forecast-base="simulada" onclick="setForecastBase('simulada')" class="forecast-base-btn text-xs px-3 py-1 font-medium transition-colors" title="Projeção estatística a partir do histórico (comportamento padrão)">Simulada</button>
+                            <button data-forecast-base="oficial" onclick="setForecastBase('oficial')" class="forecast-base-btn text-xs px-3 py-1 font-medium transition-colors" title="Previsão oficial de nível (CSV de modelos CFSv2/ECMWF SEAS)">Oficial</button>
                         </div>
                     </div>
                     <label id="wrapTogglePrecip" class="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer" style="display:none" title="Exibir/ocultar precipitação no eixo secundário (independente da base de nível)">
@@ -203,7 +203,7 @@
                         </label>
                     </div>
                 </div>
-                <p id="forecastOficialStatus" class="text-xs text-gray-400 mb-2"></p>
+                <p id="forecastOficialStatus" class="forecast-base-status text-xs text-gray-400 mb-2"></p>
                 <div class="chart-container"><canvas id="chartRios"></canvas></div>
                 <p class="text-xs text-gray-500 mt-2" id="notaGraficoRios">
                     Cenários baseados em projeção histórica por mês. Tipo de projeção configurável em "Gerenciar Cenários". Piso em 0.
@@ -710,6 +710,18 @@
         <!-- MÓDULO 4: DASHBOARD -->
         <div id="content-dashboard" class="tab-content hidden">
 
+            <!-- Base de Forecast dos cálculos -->
+            <div class="card p-3 mb-4">
+                <div class="flex items-center gap-3 flex-wrap">
+                    <span class="text-sm font-medium text-gray-600 flex items-center gap-1 whitespace-nowrap"><i data-lucide="database" class="w-4 h-4"></i> Base de Forecast dos cálculos:</span>
+                    <div class="inline-flex rounded-md border border-gray-300 overflow-hidden">
+                        <button data-forecast-base="simulada" onclick="setForecastBase('simulada')" class="forecast-base-btn text-xs px-3 py-1 font-medium transition-colors" title="Cálculos a partir da projeção estatística (histórico)">Simulada</button>
+                        <button data-forecast-base="oficial" onclick="setForecastBase('oficial')" class="forecast-base-btn text-xs px-3 py-1 font-medium transition-colors" title="Cálculos a partir do forecast oficial (CSV de modelos)">Oficial</button>
+                    </div>
+                    <span class="forecast-base-status text-xs text-gray-400"></span>
+                </div>
+            </div>
+
             <!-- KPIs -->
             <div class="grid-4 mb-6">
                 <div class="card p-5 border-l-4 border-green-500">
@@ -872,6 +884,13 @@
                         <div>
                             <label class="block text-xs font-medium text-gray-500 mb-1">Ano de referência</label>
                             <select id="resumoAnoBase" class="input-field text-sm" style="width:auto" onchange="setAnoBase(this.value)"></select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 mb-1">Base de Forecast</label>
+                            <div class="inline-flex rounded-md border border-gray-300 overflow-hidden h-[38px] items-stretch">
+                                <button data-forecast-base="simulada" onclick="setForecastBase('simulada')" class="forecast-base-btn text-xs px-3 font-medium transition-colors" title="Cálculos a partir da projeção estatística (histórico)">Simulada</button>
+                                <button data-forecast-base="oficial" onclick="setForecastBase('oficial')" class="forecast-base-btn text-xs px-3 font-medium transition-colors" title="Cálculos a partir do forecast oficial (CSV de modelos)">Oficial</button>
+                            </div>
                         </div>
                         <div>
                             <label class="block text-xs font-medium text-gray-500 mb-1">Saudação</label>
@@ -1683,6 +1702,32 @@
         return forecastOficial;
     }
 
+    // Envelope DIÁRIO entre os modelos para um cenário — usado nos cálculos de precisão
+    // diária (tempo de parada, série do resumo). Retorna Map(YYYY-MM-DD -> nível m).
+    function getOficialSerieDiaria(cenario) {
+        if (!forecastOficial) return null;
+        forecastOficial._diario = forecastOficial._diario || {};
+        const key = (cenario === 'otimista' || cenario === 'pessimista') ? cenario : 'medio';
+        if (forecastOficial._diario[key]) return forecastOficial._diario[key];
+        const porData = {};
+        forecastOficial.seriesOrder.forEach(nome => {
+            forecastOficial.series[nome].forEach(p => {
+                (porData[p.date] = porData[p.date] || []).push(p.valor);
+            });
+        });
+        const map = new Map();
+        Object.keys(porData).forEach(d => {
+            const arr = porData[d];
+            let v;
+            if (key === 'otimista') v = Math.max(...arr);
+            else if (key === 'pessimista') v = Math.min(...arr);
+            else v = arr.reduce((a, b) => a + b, 0) / arr.length;
+            map.set(d.substring(0, 10), Math.max(0, v));
+        });
+        forecastOficial._diario[key] = map;
+        return map;
+    }
+
     // Deriva os cenários mensais (envelope entre modelos) a partir das séries de nível.
     // mensal[ano][mes] = { medio, otimista(=máx), pessimista(=mín), nSeries }
     function getOficialMensal() {
@@ -1792,28 +1837,29 @@
     }
 
     function renderForecastBaseUI() {
-        const btnSim = document.getElementById('btnBaseSimulada');
-        const btnOfi = document.getElementById('btnBaseOficial');
-        if (btnSim && btnOfi) {
-            const on  = 'text-xs px-3 py-1 font-medium transition-colors bg-blue-600 text-white';
-            const off = 'text-xs px-3 py-1 font-medium transition-colors bg-white text-gray-600 hover:bg-gray-50';
-            btnSim.className = forecastBase === 'simulada' ? on : off;
-            btnOfi.className = forecastBase === 'oficial' ? on : off;
+        // Sincroniza TODOS os seletores de base (Nível dos Rios, Capacidade, Resumo).
+        const on  = 'forecast-base-btn text-xs px-3 py-1 font-medium transition-colors bg-blue-600 text-white';
+        const off = 'forecast-base-btn text-xs px-3 py-1 font-medium transition-colors bg-white text-gray-600 hover:bg-gray-50';
+        document.querySelectorAll('button[data-forecast-base]').forEach(btn => {
+            // preserva utilitários de altura já existentes (ex.: px-3 sem py no Resumo)
+            const extra = btn.getAttribute('data-extra-class') || '';
+            btn.className = ((forecastBase === btn.dataset.forecastBase) ? on : off) + (extra ? ' ' + extra : '');
+        });
+
+        let statusHtml;
+        if (forecastOficial) {
+            const rios = [...new Set(dadosRios.map(r => r.nome))];
+            const vinc = rios.filter(rioMatchesOficial);
+            const rioVinc = !rios.length ? '—' : (vinc.length ? vinc.join(', ') : 'nenhum (sem correspondência de nome)');
+            statusHtml = `Base oficial — Fonte: <b>${forecastOficial.fonte}</b> · Estação: <b>${forecastOficial.estacao}</b> · `
+                + `${forecastOficial.seriesOrder.length} série(s) de nível`
+                + (forecastOficial.precipOrder.length ? ` · ${forecastOficial.precipOrder.length} de precipitação` : '')
+                + ` · Rio vinculado: <b>${rioVinc}</b>`;
+        } else {
+            statusHtml = 'Nenhuma base oficial carregada — envie um CSV para habilitar a base Oficial.';
         }
-        const st = document.getElementById('forecastOficialStatus');
-        if (st) {
-            if (forecastOficial) {
-                const rios = [...new Set(dadosRios.map(r => r.nome))];
-                const vinc = rios.filter(rioMatchesOficial);
-                const rioVinc = !rios.length ? '—' : (vinc.length ? vinc.join(', ') : 'nenhum (sem correspondência de nome)');
-                st.innerHTML = `Base oficial — Fonte: <b>${forecastOficial.fonte}</b> · Estação: <b>${forecastOficial.estacao}</b> · `
-                    + `${forecastOficial.seriesOrder.length} série(s) de nível`
-                    + (forecastOficial.precipOrder.length ? ` · ${forecastOficial.precipOrder.length} de precipitação` : '')
-                    + ` · Rio vinculado: <b>${rioVinc}</b>`;
-            } else {
-                st.textContent = 'Nenhuma base oficial carregada — envie um CSV para habilitar a base Oficial.';
-            }
-        }
+        document.querySelectorAll('.forecast-base-status').forEach(el => { el.innerHTML = statusHtml; });
+
         const precipWrap = document.getElementById('wrapTogglePrecip');
         if (precipWrap) precipWrap.style.display = (forecastOficial && forecastOficial.precipOrder.length) ? '' : 'none';
         const precipChk = document.getElementById('chkMostrarPrecip');
@@ -3496,10 +3542,31 @@
 
         const lastHistMs = anchors.length ? anchors[anchors.length - 1].ms : (new Date(anoBase, 0, 1, 12).getTime() - 1);
 
+        // Base OFICIAL: usa os valores DIÁRIOS reais do CSV (envelope do cenário) como âncoras,
+        // para os cálculos respeitarem o comportamento diário dos modelos. Marca os meses já
+        // cobertos para não duplicar com âncoras mensais.
+        const oficialAtiva = forecastBase === 'oficial' && forecastOficial && rioMatchesOficial(rioSel);
+        const oficialDiario = oficialAtiva ? getOficialSerieDiaria(cenario) : null;
+        const mesesCobertosOficial = new Set(); // chave "y-m"
+        if (oficialDiario) {
+            const mensal = getOficialMensal();
+            for (const [k, v] of oficialDiario) {
+                const d = new Date(k + 'T12:00:00');
+                const y = d.getFullYear();
+                if (y < anoBase || y > anoFim) continue;
+                if (mensal && mensal[y] && mensal[y][d.getMonth()]) mesesCobertosOficial.add(y + '-' + d.getMonth());
+                const ms = d.getTime();
+                if (ms <= lastHistMs) continue;
+                anchors.push({ ms, nivel: v });
+            }
+        }
+
         // Âncoras de projeção mensal (dia 15) para todos os meses futuros da janela.
         // Usa getNivelRioCenarioAnoMes — a fonte única de projeção, válida para qualquer ano.
+        // Meses já cobertos por dados diários oficiais são pulados (evita âncora conflitante).
         for (let y = anoBase; y <= anoFim; y++) {
             for (let m = 0; m < 12; m++) {
+                if (mesesCobertosOficial.has(y + '-' + m)) continue;
                 const ms = new Date(y, m, 15, 12).getTime();
                 if (ms <= lastHistMs) continue;
                 const nivel = getNivelRioCenarioAnoMes(rioSel, y, m, cenario);
