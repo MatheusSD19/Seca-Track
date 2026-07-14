@@ -2317,11 +2317,14 @@
     function importarDadosRios(uint8) {
         if (!Array.isArray(dadosRios)) dadosRios = [];
 
-        const workbook = XLSX.read(uint8, { type:'array', cellDates:true });
+        // raw:true entrega os valores originais das células (texto de CSV como string e
+        // datas reais de Excel como "serial" numérico). Assim as datas são interpretadas
+        // por parseDateToISO de forma consistente, sem o SheetJS trocar dia/mês ao formatar.
+        const workbook = XLSX.read(uint8, { type:'array', raw:true });
         if (!workbook.SheetNames.length) throw new Error('O arquivo não contém nenhuma planilha.');
         const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
         if (!firstSheet) throw new Error('A primeira aba da planilha está vazia.');
-        const jsonData = XLSX.utils.sheet_to_json(firstSheet, { raw:false, defval:'' });
+        const jsonData = XLSX.utils.sheet_to_json(firstSheet, { raw:true, defval:'' });
 
         // Índice dos registros já existentes por (rio normalizado + data ISO) para o upsert.
         const chave = (nome, dataISO) => `${String(nome).trim().toLowerCase()}|${dataISO}`;
@@ -2370,7 +2373,21 @@
     }
 
     function parseDateToISO(v) {
-        if (v instanceof Date && !isNaN(v)) return v.toISOString().split('T')[0];
+        // Objeto Date: usa os componentes locais (o SheetJS ancora datas na meia-noite
+        // local; toISOString em UTC poderia deslocar um dia em alguns fusos).
+        if (v instanceof Date && !isNaN(v)) {
+            return `${String(v.getFullYear()).padStart(4,'0')}-${String(v.getMonth()+1).padStart(2,'0')}-${String(v.getDate()).padStart(2,'0')}`;
+        }
+        // Número: é um "serial" de data do Excel. Convertido pelo próprio SheetJS,
+        // de forma independente de fuso horário e do idioma/formato da célula —
+        // evita a troca dia/mês ao importar planilhas com datas reais.
+        if (typeof v === 'number' && isFinite(v)) {
+            const c = (typeof XLSX !== 'undefined' && XLSX.SSF && XLSX.SSF.parse_date_code)
+                ? XLSX.SSF.parse_date_code(v) : null;
+            if (!c || !c.y) return null;
+            const isoNum = `${String(c.y).padStart(4,'0')}-${String(c.m).padStart(2,'0')}-${String(c.d).padStart(2,'0')}`;
+            return isDataISOValida(isoNum) ? isoNum : null;
+        }
         const s = String(v).trim();
         let y, m, d;
         const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
