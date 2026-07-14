@@ -1711,7 +1711,7 @@
         if (forecastOficial._diario[key]) return forecastOficial._diario[key];
         const porData = {};
         forecastOficial.seriesOrder.forEach(nome => {
-            forecastOficial.series[nome].forEach(p => {
+            (forecastOficial.series[nome] || []).forEach(p => {
                 (porData[p.date] = porData[p.date] || []).push(p.valor);
             });
         });
@@ -1735,7 +1735,7 @@
         if (forecastOficial._mensal) return forecastOficial._mensal;
         const acc = {};
         forecastOficial.seriesOrder.forEach(nome => {
-            forecastOficial.series[nome].forEach(p => {
+            (forecastOficial.series[nome] || []).forEach(p => {
                 const d = new Date(p.date + 'T00:00:00');
                 if (isNaN(d.getTime())) return;
                 const y = d.getFullYear(), m = d.getMonth();
@@ -2259,43 +2259,99 @@
 
         const reader = new FileReader();
         reader.onload = function(e) {
+            // Etapa 1 — leitura/parse do arquivo. Um erro aqui é uma falha real de importação.
+            let resultado;
             try {
-                const data = new Uint8Array(e.target.result);
-                const workbook = XLSX.read(data, { type:'array', cellDates:true });
-                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                const jsonData = XLSX.utils.sheet_to_json(firstSheet, { raw:false, defval:'' });
+                resultado = importarDadosRios(new Uint8Array(e.target.result));
+            } catch (err) {
+                alert('Erro ao ler arquivo: ' + err.message);
+                input.value = '';
+                return;
+            }
 
-                let count = 0, errors = 0;
-                jsonData.forEach(row => {
-                    const keys = Object.keys(row);
-                    const dataVal  = row['Data'] ?? row['data'] ?? row['DATA'] ?? row[keys[0]];
-                    const nomeVal  = row['Nome do Rio'] ?? row['Rio'] ?? row['rio'] ?? row[keys[1]];
-                    const nivelVal = row['Nível do Rio'] ?? row['Nível'] ?? row['nivel'] ?? row['Nivel'] ?? row[keys[2]];
-
-                    if (dataVal && nomeVal && nivelVal !== '' && nivelVal !== undefined && nivelVal !== null) {
-                        const dataISO = parseDateToISO(dataVal);
-                        const nivel   = parseNivel(nivelVal);
-                        if (!dataISO || isNaN(nivel)) { errors++; return; }
-                        dadosRios.push({
-                            id: Date.now() + Math.random(),
-                            data: dataISO,
-                            nome: String(nomeVal).trim(),
-                            nivel
-                        });
-                        count++;
-                    }
-                });
-
+            // Etapa 2 — persistência e atualização das telas. Isolada da leitura para que um
+            // eventual erro de renderização não seja confundido com falha de importação
+            // (os dados já foram importados e salvos neste ponto).
+            try {
                 invalidarCacheProjecao();
                 saveToLocalStorage();
                 updateFiltroRio();
                 renderTabelaRios();
                 updateRioChart();
-                alert(`${count} registros importados.${errors ? ' ' + errors + ' linhas ignoradas (formato inválido).' : ''}`);
-            } catch (err) { alert('Erro ao ler arquivo: ' + err.message); }
+            } catch (err) {
+                console.error('Dados importados, mas houve um erro ao atualizar as telas:', err);
+            }
+
+            const { adicionados, atualizados, ignorados, inalterados } = resultado;
+            let msg;
+            if (adicionados || atualizados) {
+                msg = `${adicionados} registro(s) adicionado(s).`;
+                if (atualizados) msg += ` ${atualizados} atualizado(s).`;
+                if (inalterados) msg += ` ${inalterados} sem alteração.`;
+                if (ignorados)   msg += ` ${ignorados} linha(s) ignorada(s) (formato inválido).`;
+            } else if (inalterados) {
+                msg = `Nenhuma alteração: ${inalterados} registro(s) já constavam na base com os mesmos valores.`;
+                if (ignorados) msg += ` ${ignorados} linha(s) ignorada(s) (formato inválido).`;
+            } else {
+                msg = 'Nenhum registro importado. Verifique se o arquivo possui as colunas de data (DD/MM/AAAA), nome do rio e nível preenchidas.';
+                if (ignorados) msg += ` (${ignorados} linha(s) com formato inválido.)`;
+            }
+            alert(msg);
+            input.value = '';
+        };
+        reader.onerror = function() {
+            alert('Erro ao ler arquivo: não foi possível ler o conteúdo do arquivo.');
+            input.value = '';
         };
         reader.readAsArrayBuffer(file);
-        input.value = '';
+    }
+
+    // Lê a planilha e faz o "upsert" dos registros de nível de rio:
+    // adiciona datas novas e ATUALIZA o nível de datas que já existiam (mesma data + rio).
+    // Retorna a contagem de adicionados/atualizados/inalterados/ignorados.
+    function importarDadosRios(uint8) {
+        if (!Array.isArray(dadosRios)) dadosRios = [];
+
+        const workbook = XLSX.read(uint8, { type:'array', cellDates:true });
+        if (!workbook.SheetNames.length) throw new Error('O arquivo não contém nenhuma planilha.');
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        if (!firstSheet) throw new Error('A primeira aba da planilha está vazia.');
+        const jsonData = XLSX.utils.sheet_to_json(firstSheet, { raw:false, defval:'' });
+
+        // Índice dos registros já existentes por (rio normalizado + data ISO) para o upsert.
+        const chave = (nome, dataISO) => `${String(nome).trim().toLowerCase()}|${dataISO}`;
+        const indice = new Map();
+        dadosRios.forEach(r => indice.set(chave(r.nome, r.data), r));
+
+        let adicionados = 0, atualizados = 0, ignorados = 0, inalterados = 0;
+        jsonData.forEach(row => {
+            const keys = Object.keys(row);
+            const dataVal  = row['Data'] ?? row['data'] ?? row['DATA'] ?? row[keys[0]];
+            const nomeVal  = row['Nome do Rio'] ?? row['Rio'] ?? row['rio'] ?? row[keys[1]];
+            const nivelVal = row['Nível do Rio'] ?? row['Nível do rio'] ?? row['Nivel do rio']
+                          ?? row['Nível'] ?? row['nivel'] ?? row['Nivel'] ?? row[keys[2]];
+
+            if (!dataVal || !nomeVal || nivelVal === '' || nivelVal === undefined || nivelVal === null) return;
+
+            const dataISO = parseDateToISO(dataVal);
+            const nivel   = parseNivel(nivelVal);
+            if (!dataISO || isNaN(nivel)) { ignorados++; return; }
+
+            const nome = String(nomeVal).trim();
+            const k = chave(nome, dataISO);
+            const existente = indice.get(k);
+            if (existente) {
+                if (existente.nivel !== nivel) { existente.nivel = nivel; atualizados++; }
+                else { inalterados++; }
+            } else {
+                const novo = { id: Date.now() + Math.random(), data: dataISO, nome, nivel };
+                dadosRios.push(novo);
+                indice.set(k, novo);
+                adicionados++;
+            }
+        });
+
+        return { adicionados, atualizados, ignorados, inalterados };
     }
 
     function parseDateToISO(v) {
