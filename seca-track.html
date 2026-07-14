@@ -1935,7 +1935,12 @@
     let _pendingUiFiltros = null; // filtros a restaurar após updateAllViews
 
     function applyLoadedState(data) {
-        dadosRios    = data.dadosRios || [];
+        // Sanitiza registros de rio com data inválida (ex.: importações antigas que
+        // gravaram datas fora do calendário). Sem isso, new Date(...).getMonth() vira
+        // NaN e quebra as projeções/telas ao carregar a base.
+        dadosRios    = (data.dadosRios || []).filter(r => r && isDataISOValida(r.data));
+        const _descartados = (data.dadosRios || []).length - dadosRios.length;
+        if (_descartados > 0) console.warn(`${_descartados} registro(s) de rio com data inválida foram ignorados ao carregar a base.`);
         empurradores = data.empurradores || [];
         barcacas     = data.barcacas || [];
         rotas        = data.rotas || [];
@@ -2354,18 +2359,36 @@
         return { adicionados, atualizados, ignorados, inalterados };
     }
 
+    // Verifica se uma string 'YYYY-MM-DD' corresponde a uma data de calendário real
+    // (rejeita 2026-13-45, 2026-02-30, etc.). Usado para não persistir datas inválidas.
+    function isDataISOValida(s) {
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || '').substring(0, 10));
+        if (!m) return false;
+        const y = +m[1], mo = +m[2], d = +m[3];
+        const dt = new Date(y, mo - 1, d);
+        return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d;
+    }
+
     function parseDateToISO(v) {
         if (v instanceof Date && !isNaN(v)) return v.toISOString().split('T')[0];
         const s = String(v).trim();
-        if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.substring(0,10);
-        const br = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
-        if (br) {
-            let [, d, m, y] = br;
-            if (y.length === 2) y = (parseInt(y) > 50 ? '19' : '20') + y;
-            return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+        let y, m, d;
+        const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+        if (iso) {
+            [, y, m, d] = iso;
+        } else {
+            const br = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+            if (br) {
+                [, d, m, y] = br;
+                if (y.length === 2) y = (parseInt(y) > 50 ? '19' : '20') + y;
+            } else {
+                const d2 = new Date(s);
+                return isNaN(d2) ? null : d2.toISOString().split('T')[0];
+            }
         }
-        const d2 = new Date(s);
-        return isNaN(d2) ? null : d2.toISOString().split('T')[0];
+        const iso3 = `${String(y).padStart(4,'0')}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        // Só retorna se for uma data de calendário real; caso contrário é inválida.
+        return isDataISOValida(iso3) ? iso3 : null;
     }
 
     function parseNivel(v) {
@@ -2738,7 +2761,7 @@
         const buckets = Array.from({length:12}, () => []);
         dadosRio.forEach(r => {
             const m = new Date(r.data + 'T00:00:00').getMonth();
-            if (!isNaN(r.nivel)) buckets[m].push(r.nivel);
+            if (m >= 0 && m <= 11 && !isNaN(r.nivel)) buckets[m].push(r.nivel);
         });
 
         const mediaMes = buckets.map(arr => arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : null);
@@ -2798,7 +2821,8 @@
         const obsPorMes = Array.from({length:12}, () => []);
         dadosRio.forEach(r => {
             const d = new Date(r.data + 'T00:00:00');
-            if (d.getFullYear() === anoAtual) obsPorMes[d.getMonth()].push(r.nivel);
+            const m = d.getMonth();
+            if (d.getFullYear() === anoAtual && m >= 0 && m <= 11) obsPorMes[m].push(r.nivel);
         });
 
         for (let m = 0; m <= mesAtual; m++) {
