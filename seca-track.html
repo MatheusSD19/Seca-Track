@@ -3637,7 +3637,14 @@
             .map(([k, vals]) => ({ ms: new Date(k + 'T12:00:00').getTime(), nivel: vals.reduce((a,b) => a+b, 0) / vals.length }))
             .sort((a, b) => a.ms - b.ms);
 
-        const lastHistMs = anchors.length ? anchors[anchors.length - 1].ms : (new Date(anoBase, 0, 1, 12).getTime() - 1);
+        const temReal    = anchors.length > 0;
+        const lastHistMs = temReal ? anchors[anchors.length - 1].ms : (new Date(anoBase, 0, 1, 12).getTime() - 1);
+        // Mês/ano da última medição real: no mês que contém essa medição não injetamos a
+        // âncora mensal (média observada), para a projeção continuar a partir do último
+        // valor real diário — sem "saltar" para a média do mês e ignorar o último dado.
+        const lastHistDate = temReal ? new Date(lastHistMs) : null;
+        const lastHistY = lastHistDate ? lastHistDate.getFullYear() : null;
+        const lastHistM = lastHistDate ? lastHistDate.getMonth()    : null;
 
         // Base OFICIAL: usa os valores DIÁRIOS reais do CSV (envelope do cenário) como âncoras,
         // para os cálculos respeitarem o comportamento diário dos modelos. Marca os meses já
@@ -3664,6 +3671,9 @@
         for (let y = anoBase; y <= anoFim; y++) {
             for (let m = 0; m < 12; m++) {
                 if (mesesCobertosOficial.has(y + '-' + m)) continue;
+                // Pula o mês da última medição real: a série já continua do último ponto
+                // observado, então não sobrepomos a média mensal como âncora (evita o salto).
+                if (temReal && y === lastHistY && m === lastHistM) continue;
                 const ms = new Date(y, m, 15, 12).getTime();
                 if (ms <= lastHistMs) continue;
                 const nivel = getNivelRioCenarioAnoMes(rioSel, y, m, cenario);
