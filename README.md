@@ -68,6 +68,11 @@ O sistema integra projeções de nível de rios com cálculo de capacidade da fr
 - Gráfico de barras empilhadas com status por faixa: Seguro / Atenção / Alerta
 - Gráfico de comparação entre cenários de rotas
 - Tabela rota × mês com status (OK / ALERTA / DÉFICIT) e drill-down por viagem
+- **Distribuição da Frota por Destino:** tabela com seleção de cenário (Otimista / Médio / Pessimista / personalizados) e de mês (mês específico, média mensal ou total do período)
+  - Hierarquia destino → rota → empurrador (ex.: Santarém, Vila do Conde, pulmões), com comboio, ciclo (h), viagens/ciclos, horas navegadas, horas em operação, utilização, volume por viagem, volume total, meta e saldo
+  - Empurradores compartilhados sinalizados; embarcações paradas exibem o motivo (calado, alocação em outra rota etc.)
+  - Quadro **Alocação por Empurrador**: rotas atendidas, viagens, horas navegadas/operação/ociosas e utilização de cada barco, incluindo os não alocados
+  - KPIs do cenário (volume entregue, atendimento da meta, viagens, horas navegadas, empurradores operando) e exportação CSV
 - **Rastreamento de Pulmão:** monitoramento separado das localizações buffer com envio, consumo e saldo por cenário
 
 ### Custo Variável

@@ -844,6 +844,79 @@
                 </div>
             </div>
 
+            <!-- Distribuição da frota por destino (cenário selecionável) -->
+            <div class="card p-6 mb-6">
+                <div class="flex justify-between items-start mb-4 flex-wrap gap-3">
+                    <div>
+                        <h2 class="text-lg font-semibold flex items-center gap-2">
+                            <i data-lucide="ship" class="w-5 h-5 text-blue-600"></i> Distribuição da Frota por Destino
+                        </h2>
+                        <div class="text-xs text-gray-500 mt-1">Volume, ciclos (viagens) e horas por destino → rota → empurrador · <span class="text-blue-500">Clique no destino para recolher/expandir</span></div>
+                    </div>
+                    <div class="flex items-center gap-3 flex-wrap">
+                        <div class="flex items-center gap-2">
+                            <label class="text-sm font-medium text-gray-600 whitespace-nowrap">Cenário:</label>
+                            <select id="dashDistCenario" class="input-field text-sm py-1" style="min-width:150px; width:auto" onchange="onDistFrotaFiltroChange()"></select>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <label class="text-sm font-medium text-gray-600 whitespace-nowrap">Mês:</label>
+                            <select id="dashDistMes" class="input-field text-sm py-1" style="min-width:170px; width:auto" onchange="onDistFrotaFiltroChange()"></select>
+                        </div>
+                        <button onclick="exportarDistribuicaoFrotaCSV()" class="text-xs px-3 py-1.5 rounded-md border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 flex items-center gap-1">
+                            <i data-lucide="download" class="w-3 h-3"></i>CSV
+                        </button>
+                    </div>
+                </div>
+
+                <div id="distFrotaKpis" class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4"></div>
+
+                <div class="table-container">
+                    <table id="tabelaDistFrota">
+                        <thead>
+                            <tr>
+                                <th>Destino / Rota / Empurrador</th>
+                                <th>Comboio</th>
+                                <th class="text-right">Ciclo (h)</th>
+                                <th class="text-right">Viagens (ciclos)</th>
+                                <th class="text-right">Horas navegadas</th>
+                                <th class="text-right">Horas em operação</th>
+                                <th class="text-right">Utilização</th>
+                                <th class="text-right">Vol/viagem (t)</th>
+                                <th class="text-right">Volume (t)</th>
+                                <th class="text-right">Meta (t)</th>
+                                <th class="text-right">Saldo (t)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbodyDistFrota"></tbody>
+                    </table>
+                </div>
+
+                <h3 class="text-sm font-semibold text-gray-700 mt-6 mb-2 flex items-center gap-2">
+                    <i data-lucide="anchor" class="w-4 h-4 text-blue-600"></i> Alocação por Empurrador
+                </h3>
+                <div class="table-container">
+                    <table id="tabelaDistFrotaEmp">
+                        <thead>
+                            <tr>
+                                <th>Empurrador</th>
+                                <th>Rotas atendidas</th>
+                                <th class="text-right">Viagens (ciclos)</th>
+                                <th class="text-right">Horas navegadas</th>
+                                <th class="text-right">Horas em operação</th>
+                                <th class="text-right">Horas ociosas</th>
+                                <th class="text-right">Utilização</th>
+                                <th class="text-right">Volume (t)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbodyDistFrotaEmp"></tbody>
+                    </table>
+                </div>
+                <p class="text-xs text-gray-400 mt-3">
+                    Ciclo = carga + viagem (ida e volta) + descarga + espera. Horas navegadas = viagens × tempo de viagem da rota; horas em operação = viagens × ciclo.
+                    Empurradores compartilhados entre rotas têm as horas rateadas (menor demanda atendida primeiro). Volume entregue em pulmão é transbordo e não soma no total final.
+                </p>
+            </div>
+
             <div class="card p-6 mb-6">
                 <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
                     <h2 class="text-lg font-semibold flex items-center gap-2">
@@ -1489,6 +1562,11 @@
     let chartDashboard = null;
     let chartComparativoCenarios = null;
     let dashViewMode = 'mes'; // 'rota' | 'mes'
+    let distFrotaCenarioSel = 'medio'; // cenário da tabela Distribuição da Frota
+    let distFrotaMesSel = null;        // 'media' | 'total' | índice do mês (string)
+    let distFrotaDestinosRecolhidos = new Set();
+    let _distFrotaCtx = null;          // contexto do último updateDashboard()
+    let _distFrotaUltimo = null;       // último resultado calculado (CSV / recolher)
     let _detalhesMesCache = []; // cache para o modal de detalhes do mês
     let dashCenariosVisiveis = {}; // id -> bool; ausente = visível (tabela)
     let dashCenariosNoGrafico = {}; // id -> bool; ausente ou false = oculto no gráfico
@@ -1901,6 +1979,8 @@
             dashFiltroPeriodo:     document.getElementById('dashFiltroPeriodo')?.value     || 'restante',
             dashFiltroAno:         document.getElementById('dashFiltroAno')?.value         || '',
             dashViewMode,
+            distFrotaCenario:      distFrotaCenarioSel,
+            distFrotaMes:          distFrotaMesSel,
             dashCenariosVisiveis,
             dashCenariosNoGrafico,
             cvAno:                 document.getElementById('cvAno')?.value                 || '',
@@ -1991,6 +2071,10 @@
         if (data.uiFiltros?.dashViewMode) {
             dashViewMode = data.uiFiltros.dashViewMode;
         }
+        if (data.uiFiltros?.distFrotaCenario !== undefined && data.uiFiltros?.distFrotaCenario !== null) {
+            distFrotaCenarioSel = data.uiFiltros.distFrotaCenario;
+        }
+        distFrotaMesSel = data.uiFiltros?.distFrotaMes ?? null;
         if (data.uiFiltros?.cvChartMode) {
             _cvChartMode = data.uiFiltros.cvChartMode;
         }
@@ -6609,6 +6693,434 @@
         return { capacidades: caps, conflitos };
     }
 
+    // ==========================================================================
+    // DISTRIBUIÇÃO DA FROTA POR DESTINO (cenário selecionável)
+    // Destino → rota → empurrador: volume, ciclos (viagens), horas navegadas,
+    // horas em operação e utilização. Usa calcularCapacidadesAjustadas(), então
+    // respeita o rateio de empurradores compartilhados e de pulmão.
+    // ==========================================================================
+
+    function getOpcoesCenarioNivel() {
+        return [
+            { id: 'otimista',   nome: 'Otimista'   },
+            { id: 'medio',      nome: 'Médio'      },
+            { id: 'pessimista', nome: 'Pessimista' },
+            ...(variaveis.cenariosCustom || []).map(c => ({ id: c.id, nome: c.nome }))
+        ];
+    }
+
+    function syncDistFrotaFiltros(mesesDashboard, ano) {
+        const selCen = document.getElementById('dashDistCenario');
+        const selMes = document.getElementById('dashDistMes');
+        if (!selCen || !selMes) return;
+
+        const opcoes = getOpcoesCenarioNivel();
+        selCen.innerHTML = opcoes.map(o => `<option value="${o.id}">${o.nome}</option>`).join('');
+        selCen.value = opcoes.some(o => String(o.id) === String(distFrotaCenarioSel)) ? String(distFrotaCenarioSel) : 'medio';
+
+        selMes.innerHTML =
+            `<option value="media">Média mensal do período</option>` +
+            `<option value="total">Total do período</option>` +
+            mesesDashboard.map(m => `<option value="${m}">${MESES_FULL[m]}/${ano}</option>`).join('');
+        const valido = [...selMes.options].some(o => o.value === String(distFrotaMesSel));
+        if (valido) {
+            selMes.value = String(distFrotaMesSel);
+        } else {
+            // Padrão: mês corrente (se estiver no período) ou o primeiro mês exibido
+            const mesAtual = new Date().getMonth();
+            const anoAtual = new Date().getFullYear();
+            const padrao = (ano === anoAtual && mesesDashboard.includes(mesAtual)) ? mesAtual : mesesDashboard[0];
+            selMes.value = padrao !== undefined ? String(padrao) : 'media';
+        }
+    }
+
+    function getDistFrotaCenarioSelecionado() {
+        const v = document.getElementById('dashDistCenario')?.value || 'medio';
+        const opc = getOpcoesCenarioNivel().find(o => String(o.id) === v);
+        return opc ? opc.id : 'medio';
+    }
+
+    function onDistFrotaFiltroChange() {
+        distFrotaCenarioSel = getDistFrotaCenarioSelecionado();
+        distFrotaMesSel     = document.getElementById('dashDistMes')?.value || 'media';
+        saveToLocalStorage();
+        renderDistribuicaoFrota(_distFrotaCtx);
+    }
+
+    function toggleDistFrotaDestino(chave) {
+        if (distFrotaDestinosRecolhidos.has(chave)) distFrotaDestinosRecolhidos.delete(chave);
+        else distFrotaDestinosRecolhidos.add(chave);
+        if (_distFrotaUltimo) renderDistFrotaTabela(_distFrotaUltimo);
+    }
+
+    function descreverComboio(itemRota) {
+        const comp = (itemRota?.composicao || []).filter(c => c.quantidade > 0);
+        if (comp.length === 0) return '—';
+        return comp.map(c => {
+            const tipo = barcacas.find(b => b.id === c.tipoBarcacaId);
+            return `${c.quantidade}× ${tipo?.nome || '?'}`;
+        }).join(' + ');
+    }
+
+    function getDestinoRota(rota) {
+        if (rota.cidadeDestinoId) {
+            const cid = cidadesDemanda.find(c => c.id === rota.cidadeDestinoId);
+            return { chave: `c${rota.cidadeDestinoId}${rota.destinoIsPulmao ? 'p' : ''}`, nome: cid?.nome || '?', isPulmao: !!rota.destinoIsPulmao };
+        }
+        const nomes = (rota.cidadesAtendidas || [])
+            .map(id => cidadesDemanda.find(c => c.id === id)?.nome)
+            .filter(Boolean);
+        return { chave: `r${rota.id}`, nome: nomes.length ? nomes.join(', ') : rota.nome, isPulmao: false };
+    }
+
+    function calcularDistribuicaoFrota(ctx, cenario, mesSel) {
+        const { rotasDoCenario, rotasDist, mesesDashboard, ano, capsAjust } = ctx;
+        const porPeriodo = mesSel === 'total' || mesSel === 'media';
+        const meses = porPeriodo ? mesesDashboard.slice() : [parseInt(mesSel)].filter(m => mesesDashboard.includes(m));
+        const isBase = ['otimista', 'medio', 'pessimista'].includes(cenario);
+        const idsExibidos = new Set(rotasDist.map(r => r.id));
+
+        const rotasAgg = {};
+        const empAgg   = {};
+        let horasDisp  = 0;
+
+        meses.forEach(mes => {
+            horasDisp += 24 * diasDoMes(ano, mes);
+            const nivelRioMap = {};
+            rotasDoCenario.forEach(r => {
+                const nivel = getNivelRioCenarioAnoMes(r.rio, ano, mes, cenario);
+                if (nivel !== null && nivel !== undefined) nivelRioMap[r.id] = nivel;
+            });
+            const caps = (isBase && capsAjust?.[`${mes}_${cenario}`])
+                || calcularCapacidadesAjustadas(rotasDoCenario, mes, ano, nivelRioMap, cenario).capacidades;
+            const demanda = calcularDemandaMensalPorRota(rotasDoCenario, mes).porRota;
+            const v = getVariaveisCenario(cenario);
+
+            rotasDoCenario.forEach(rota => {
+                if (!rotaAtivaNoMes(rota, mes)) return;
+                if (!rotasAgg[rota.id]) rotasAgg[rota.id] = { rota, volume: 0, meta: 0, emps: {}, niveis: [] };
+                const ra = rotasAgg[rota.id];
+                ra.meta   += demanda[rota.id] || 0;
+                ra.volume += caps[rota.id]?.total || 0;
+                if (nivelRioMap[rota.id] !== undefined) ra.niveis.push({ nivel: nivelRioMap[rota.id], calado: nivelRioMap[rota.id] + v.abaco - v.faq });
+
+                const detalhes = caps[rota.id]?.detalhes || [];
+                (rota.empurradores || []).forEach(item => {
+                    if (!item.empurradorId) return;
+                    const emp = empurradores.find(e => e.id === item.empurradorId);
+                    if (!ra.emps[item.empurradorId]) {
+                        ra.emps[item.empurradorId] = {
+                            emp, nome: emp?.nome || '?', comboio: descreverComboio(item),
+                            viagens: 0, hNav: 0, hOp: 0, volume: 0, motivos: new Set()
+                        };
+                    }
+                    const ea  = ra.emps[item.empurradorId];
+                    const det = detalhes.find(d => d.emp?.id === item.empurradorId);
+                    if (!emp || emp.ativo === false) { ea.motivos.add('Empurrador inativo'); return; }
+                    const viagens = det?.viagens || 0;
+                    if (det?.ciclo && viagens >= 0.001) {
+                        const hOp  = viagens * det.ciclo.cicloH;
+                        const hNav = viagens * (rota.tempoViagemH || 0);
+                        ea.viagens += viagens; ea.hOp += hOp; ea.hNav += hNav; ea.volume += det.volumeTotal || 0;
+
+                        if (!empAgg[emp.id]) empAgg[emp.id] = { emp, viagens: 0, hNav: 0, hOp: 0, volume: 0, rotas: {}, motivos: new Set() };
+                        const eg = empAgg[emp.id];
+                        eg.viagens += viagens; eg.hOp += hOp; eg.hNav += hNav; eg.volume += det.volumeTotal || 0;
+                        eg.rotas[rota.id] = (eg.rotas[rota.id] || 0) + viagens;
+                    } else if (det?.motivo) {
+                        ea.motivos.add(det.motivo);
+                    } else {
+                        ea.motivos.add('Sem viagens no período');
+                    }
+                });
+            });
+        });
+
+        // Motivos de parada também no consolidado por empurrador
+        Object.values(rotasAgg).forEach(ra => {
+            Object.entries(ra.emps).forEach(([eId, ea]) => {
+                if (!ea.emp || ea.emp.ativo === false) return;
+                if (!empAgg[eId]) empAgg[eId] = { emp: ea.emp, viagens: 0, hNav: 0, hOp: 0, volume: 0, rotas: {}, motivos: new Set() };
+                if (!(ra.rota.id in empAgg[eId].rotas)) empAgg[eId].rotas[ra.rota.id] = 0;
+                ea.motivos.forEach(m => empAgg[eId].motivos.add(`${ra.rota.nome}: ${m}`));
+            });
+        });
+
+        // Agrupa as rotas exibidas por destino
+        const grupos = {};
+        Object.values(rotasAgg).filter(ra => idsExibidos.has(ra.rota.id)).forEach(ra => {
+            const dest = getDestinoRota(ra.rota);
+            if (!grupos[dest.chave]) grupos[dest.chave] = { ...dest, rotas: [] };
+            const emps = Object.values(ra.emps);
+            ra.viagens = emps.reduce((s, e) => s + e.viagens, 0);
+            ra.hNav    = emps.reduce((s, e) => s + e.hNav, 0);
+            ra.hOp     = emps.reduce((s, e) => s + e.hOp, 0);
+            ra.nOperando = emps.filter(e => e.viagens >= 0.001).length;
+            grupos[dest.chave].rotas.push(ra);
+        });
+        const listaGrupos = Object.values(grupos).map(g => {
+            const soma = k => g.rotas.reduce((s, r) => s + (r[k] || 0), 0);
+            const empIds = new Set();
+            g.rotas.forEach(r => Object.entries(r.emps).forEach(([id, e]) => { if (e.viagens >= 0.001) empIds.add(id); }));
+            g.rotas.sort((a, b) => b.volume - a.volume);
+            return { ...g, volume: soma('volume'), meta: soma('meta'), viagens: soma('viagens'), hNav: soma('hNav'), hOp: soma('hOp'), nEmps: empIds.size };
+        }).sort((a, b) => (a.isPulmao - b.isPulmao) || (b.volume - a.volume));
+
+        // Empurradores ativos que não estão em nenhuma rota do cenário
+        const naoAlocados = empurradores
+            .filter(e => e.ativo !== false && !empAgg[e.id])
+            .map(e => ({ emp: e, viagens: 0, hNav: 0, hOp: 0, volume: 0, rotas: {}, motivos: new Set(['Não alocado em nenhuma rota do cenário']) }));
+
+        return {
+            cenario, mesSel, meses, ano, horasDisp,
+            fator: mesSel === 'media' ? 1 / Math.max(1, meses.length) : 1,
+            grupos: listaGrupos,
+            empurradores: [...Object.values(empAgg).sort((a, b) => b.hOp - a.hOp), ...naoAlocados]
+        };
+    }
+
+    function renderDistribuicaoFrota(ctx) {
+        _distFrotaCtx = ctx;
+        const tbody    = document.getElementById('tbodyDistFrota');
+        const tbodyEmp = document.getElementById('tbodyDistFrotaEmp');
+        const kpis     = document.getElementById('distFrotaKpis');
+        if (!tbody || !tbodyEmp) return;
+
+        if (!ctx || !ctx.rotasDist?.length || !ctx.mesesDashboard?.length) {
+            _distFrotaUltimo = null;
+            tbody.innerHTML    = `<tr><td colspan="11" class="text-center text-gray-500 py-6">Sem dados para exibir a distribuição da frota.</td></tr>`;
+            tbodyEmp.innerHTML = `<tr><td colspan="8" class="text-center text-gray-500 py-4">—</td></tr>`;
+            if (kpis) kpis.innerHTML = '';
+            return;
+        }
+
+        syncDistFrotaFiltros(ctx.mesesDashboard, ctx.ano);
+        const cenario = getDistFrotaCenarioSelecionado();
+        const mesSel  = document.getElementById('dashDistMes')?.value || 'media';
+        renderDistFrotaTabela(calcularDistribuicaoFrota(ctx, cenario, mesSel));
+    }
+
+    function renderDistFrotaTabela(res) {
+        _distFrotaUltimo = res;
+        const tbody    = document.getElementById('tbodyDistFrota');
+        const tbodyEmp = document.getElementById('tbodyDistFrotaEmp');
+        const kpis     = document.getElementById('distFrotaKpis');
+        const f = res.fator;
+        const fmtT = n => Math.round(n * f).toLocaleString('pt-BR');
+        const fmtV = n => (n * f).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+        const fmtH = n => Math.round(n * f).toLocaleString('pt-BR');
+        const fmtCiclo = (hOp, viagens) => viagens >= 0.001 ? (hOp / viagens).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—';
+        const fmtVolViagem = (vol, viagens) => viagens >= 0.001 ? Math.round(vol / viagens).toLocaleString('pt-BR') : '—';
+        const fmtPct = p => `${Math.round(p * 100)}%`;
+        const saldoCell = (vol, meta, isPulmao) => {
+            if (isPulmao || meta <= 0) return `<td class="text-right text-gray-400">—</td>`;
+            const s = vol - meta;
+            return `<td class="text-right font-medium ${s < 0 ? 'text-red-600' : 'text-green-600'}">${s > 0 ? '+' : ''}${fmtT(s)}</td>`;
+        };
+        const metaCell = (meta, isPulmao) => `<td class="text-right">${isPulmao || meta <= 0 ? '<span class="text-gray-400">—</span>' : fmtT(meta)}</td>`;
+        const utilBadge = u => {
+            const cls = u >= 0.85 ? 'badge-success' : u >= 0.5 ? 'badge-info' : u > 0 ? 'badge-warning' : 'badge-danger';
+            return `<span class="badge ${cls}">${u > 0 ? fmtPct(u) : 'Parado'}</span>`;
+        };
+
+        // ── KPIs (somente destinos finais entram no volume) ──
+        const finais   = res.grupos.filter(g => !g.isPulmao);
+        const volFinal = finais.reduce((s, g) => s + g.volume, 0);
+        const metaFin  = finais.reduce((s, g) => s + g.meta, 0);
+        const viagTot  = res.grupos.reduce((s, g) => s + g.viagens, 0);
+        const hNavTot  = res.grupos.reduce((s, g) => s + g.hNav, 0);
+        const empsOper = res.empurradores.filter(e => e.viagens >= 0.001).length;
+        const empsTot  = res.empurradores.length;
+        const cenNome  = getOpcoesCenarioNivel().find(o => String(o.id) === String(res.cenario))?.nome || res.cenario;
+        const periodoLbl = res.mesSel === 'media' ? 'média mensal' : res.mesSel === 'total' ? 'total do período' : `${MESES_FULL[res.meses[0]]}/${res.ano}`;
+        const kpi = (titulo, valor, sub, cor) => `
+            <div class="rounded-lg border border-gray-200 p-3 border-l-4 ${cor}">
+                <div class="text-xs text-gray-500 uppercase tracking-wide">${titulo}</div>
+                <div class="text-lg font-bold text-gray-800">${valor}</div>
+                <div class="text-xs text-gray-400">${sub}</div>
+            </div>`;
+        if (kpis) kpis.innerHTML = [
+            kpi('Volume entregue', `${fmtT(volFinal)} t`, `${cenNome} · ${periodoLbl}`, 'border-l-blue-500'),
+            kpi('Atendimento da meta', metaFin > 0 ? fmtPct(volFinal / metaFin) : '—', metaFin > 0 ? `Meta ${fmtT(metaFin)} t` : 'Sem meta cadastrada', volFinal >= metaFin ? 'border-l-green-500' : 'border-l-red-500'),
+            kpi('Viagens (ciclos)', fmtV(viagTot), 'Todas as rotas, incl. pulmão', 'border-l-indigo-500'),
+            kpi('Horas navegadas', `${fmtH(hNavTot)} h`, 'Soma dos empurradores', 'border-l-cyan-500'),
+            kpi('Empurradores operando', `${empsOper} / ${empsTot}`, `${empsTot - empsOper} parado(s)/ocioso(s)`, 'border-l-amber-500')
+        ].join('');
+
+        // ── Tabela destino → rota → empurrador ──
+        if (res.grupos.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="11" class="text-center text-gray-500 py-6">Nenhuma rota ativa no período selecionado.</td></tr>`;
+        } else {
+            let html = '';
+            res.grupos.forEach(g => {
+                const recolhido = distFrotaDestinosRecolhidos.has(g.chave);
+                html += `
+                    <tr class="cursor-pointer ${g.isPulmao ? 'bg-orange-50' : 'bg-blue-50'} font-semibold" onclick="toggleDistFrotaDestino('${g.chave}')">
+                        <td>
+                            <span class="inline-block w-3 text-gray-500">${recolhido ? '▸' : '▾'}</span>
+                            ${g.nome}
+                            ${g.isPulmao ? '<span class="ml-1 inline-block text-xs px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 font-normal">Pulmão · transbordo</span>' : ''}
+                            <span class="ml-1 text-xs font-normal text-gray-500">${g.rotas.length} rota(s) · ${g.nEmps} empurrador(es)</span>
+                        </td>
+                        <td></td>
+                        <td class="text-right">${fmtCiclo(g.hOp, g.viagens)}</td>
+                        <td class="text-right">${fmtV(g.viagens)}</td>
+                        <td class="text-right">${fmtH(g.hNav)}</td>
+                        <td class="text-right">${fmtH(g.hOp)}</td>
+                        <td></td>
+                        <td class="text-right">${fmtVolViagem(g.volume, g.viagens)}</td>
+                        <td class="text-right">${fmtT(g.volume)}</td>
+                        ${metaCell(g.meta, g.isPulmao)}
+                        ${saldoCell(g.volume, g.meta, g.isPulmao)}
+                    </tr>`;
+                if (recolhido) return;
+
+                g.rotas.forEach(ra => {
+                    const r = ra.rota;
+                    const origem = cidadesDemanda.find(c => c.id === r.cidadeOrigemId)?.nome;
+                    let nivelInfo = '';
+                    if (ra.niveis.length === 1) {
+                        nivelInfo = ` · nível ${ra.niveis[0].nivel.toFixed(2)} m · calado op. ${ra.niveis[0].calado.toFixed(2)} m`;
+                    } else if (ra.niveis.length > 1) {
+                        const minCal = Math.min(...ra.niveis.map(n => n.calado));
+                        nivelInfo = ` · calado op. mín. ${minCal.toFixed(2)} m`;
+                    }
+                    html += `
+                        <tr class="font-medium">
+                            <td class="pl-6">
+                                ${r.nome}
+                                <div class="text-xs font-normal text-gray-400">${origem ? `${origem} → ${g.nome}` : ''}${r.rio ? ` · ${r.rio}` : ''}${nivelInfo}</div>
+                            </td>
+                            <td class="text-xs text-gray-500">${ra.nOperando}/${Object.keys(ra.emps).length} operando</td>
+                            <td class="text-right">${fmtCiclo(ra.hOp, ra.viagens)}</td>
+                            <td class="text-right">${fmtV(ra.viagens)}</td>
+                            <td class="text-right">${fmtH(ra.hNav)}</td>
+                            <td class="text-right">${fmtH(ra.hOp)}</td>
+                            <td></td>
+                            <td class="text-right">${fmtVolViagem(ra.volume, ra.viagens)}</td>
+                            <td class="text-right">${fmtT(ra.volume)}</td>
+                            ${metaCell(ra.meta, g.isPulmao)}
+                            ${saldoCell(ra.volume, ra.meta, g.isPulmao)}
+                        </tr>`;
+
+                    const emps = Object.values(ra.emps).sort((a, b) => b.viagens - a.viagens);
+                    if (emps.length === 0) {
+                        html += `<tr class="text-xs"><td class="pl-10 text-gray-400" colspan="11">Nenhum empurrador alocado nesta rota</td></tr>`;
+                    }
+                    emps.forEach(ea => {
+                        const compartilhado = Object.values(res.empurradores.find(x => x.emp?.id === ea.emp?.id)?.rotas || {}).filter(v => v >= 0.001).length > 1;
+                        if (ea.viagens < 0.001) {
+                            html += `
+                                <tr class="text-xs bg-red-50">
+                                    <td class="pl-10">↳ ${ea.nome}</td>
+                                    <td class="text-gray-500">${ea.comboio}</td>
+                                    <td colspan="9" class="text-red-600">${[...ea.motivos].join(' · ') || 'Sem viagens'}</td>
+                                </tr>`;
+                            return;
+                        }
+                        html += `
+                            <tr class="text-xs">
+                                <td class="pl-10">↳ ${ea.nome}${compartilhado ? ' <span class="badge badge-warning ml-1" title="Horas rateadas entre rotas">compartilhado</span>' : ''}</td>
+                                <td class="text-gray-500">${ea.comboio}</td>
+                                <td class="text-right">${fmtCiclo(ea.hOp, ea.viagens)}</td>
+                                <td class="text-right">${fmtV(ea.viagens)}</td>
+                                <td class="text-right">${fmtH(ea.hNav)}</td>
+                                <td class="text-right">${fmtH(ea.hOp)}</td>
+                                <td class="text-right">${utilBadge(res.horasDisp > 0 ? ea.hOp / res.horasDisp : 0)}</td>
+                                <td class="text-right">${fmtVolViagem(ea.volume, ea.viagens)}</td>
+                                <td class="text-right">${fmtT(ea.volume)}</td>
+                                <td></td><td></td>
+                            </tr>`;
+                    });
+                });
+            });
+
+            html += `
+                <tr class="font-bold bg-gray-100">
+                    <td>Total (destinos finais)</td>
+                    <td></td>
+                    <td class="text-right">${fmtCiclo(finais.reduce((s, g) => s + g.hOp, 0), finais.reduce((s, g) => s + g.viagens, 0))}</td>
+                    <td class="text-right">${fmtV(finais.reduce((s, g) => s + g.viagens, 0))}</td>
+                    <td class="text-right">${fmtH(finais.reduce((s, g) => s + g.hNav, 0))}</td>
+                    <td class="text-right">${fmtH(finais.reduce((s, g) => s + g.hOp, 0))}</td>
+                    <td></td>
+                    <td class="text-right">${fmtVolViagem(volFinal, finais.reduce((s, g) => s + g.viagens, 0))}</td>
+                    <td class="text-right">${fmtT(volFinal)}</td>
+                    ${metaCell(metaFin, false)}
+                    ${saldoCell(volFinal, metaFin, false)}
+                </tr>`;
+            tbody.innerHTML = html;
+        }
+
+        // ── Alocação por empurrador ──
+        const nomeRota = id => rotas.find(r => r.id === parseFloat(id))?.nome || '?';
+        tbodyEmp.innerHTML = res.empurradores.length === 0
+            ? `<tr><td colspan="8" class="text-center text-gray-500 py-4">Nenhum empurrador cadastrado.</td></tr>`
+            : res.empurradores.map(e => {
+                const util = res.horasDisp > 0 ? e.hOp / res.horasDisp : 0;
+                const rotasTxt = Object.entries(e.rotas)
+                    .map(([id, v]) => `${nomeRota(id)} <span class="text-gray-400">(${fmtV(v)})</span>`)
+                    .join(' · ');
+                const motivos = e.viagens < 0.001 && e.motivos.size
+                    ? `<div class="text-red-500">${[...e.motivos].join(' · ')}</div>` : '';
+                return `
+                    <tr class="${e.viagens < 0.001 ? 'bg-red-50' : ''}">
+                        <td class="font-medium">${e.emp?.nome || '?'}</td>
+                        <td class="text-xs">${rotasTxt || '<span class="text-gray-400">—</span>'}${motivos}</td>
+                        <td class="text-right">${fmtV(e.viagens)}</td>
+                        <td class="text-right">${fmtH(e.hNav)}</td>
+                        <td class="text-right">${fmtH(e.hOp)}</td>
+                        <td class="text-right">${fmtH(Math.max(0, res.horasDisp - e.hOp))}</td>
+                        <td class="text-right">${utilBadge(util)}</td>
+                        <td class="text-right">${fmtT(e.volume)}</td>
+                    </tr>`;
+            }).join('');
+    }
+
+    function exportarDistribuicaoFrotaCSV() {
+        const res = _distFrotaUltimo;
+        if (!res) { alert('Sem dados de distribuição da frota para exportar.'); return; }
+        const f = res.fator;
+        const num = (n, dec = 0) => (n * f).toLocaleString('pt-BR', { useGrouping: false, minimumFractionDigits: dec, maximumFractionDigits: dec });
+        const ciclo = (hOp, viag) => viag >= 0.001 ? (hOp / viag).toLocaleString('pt-BR', { useGrouping: false, maximumFractionDigits: 1 }) : '';
+        const volViag = (vol, viag) => viag >= 0.001 ? Math.round(vol / viag).toString() : '';
+        const esc = s => `"${String(s ?? '').replace(/"/g, '""')}"`;
+        const cenNome = getOpcoesCenarioNivel().find(o => String(o.id) === String(res.cenario))?.nome || res.cenario;
+        const periodo = res.mesSel === 'media' ? 'Média mensal' : res.mesSel === 'total' ? 'Total do período' : `${MESES_FULL[res.meses[0]]}/${res.ano}`;
+
+        const linhas = [
+            `Cenário;${esc(cenNome)};Período;${esc(periodo)};Ano;${res.ano}`,
+            '',
+            ['Nível', 'Destino', 'Rota', 'Empurrador', 'Comboio', 'Ciclo (h)', 'Viagens', 'Horas navegadas', 'Horas em operação', 'Utilização (%)', 'Vol/viagem (t)', 'Volume (t)', 'Meta (t)', 'Saldo (t)'].join(';')
+        ];
+        res.grupos.forEach(g => {
+            const metaG = g.isPulmao ? '' : num(g.meta);
+            linhas.push(['Destino', esc(g.nome + (g.isPulmao ? ' (pulmão)' : '')), '', '', '', ciclo(g.hOp, g.viagens), num(g.viagens, 1), num(g.hNav), num(g.hOp), '', volViag(g.volume, g.viagens), num(g.volume), metaG, g.isPulmao ? '' : num(g.volume - g.meta)].join(';'));
+            g.rotas.forEach(ra => {
+                linhas.push(['Rota', esc(g.nome), esc(ra.rota.nome), '', '', ciclo(ra.hOp, ra.viagens), num(ra.viagens, 1), num(ra.hNav), num(ra.hOp), '', volViag(ra.volume, ra.viagens), num(ra.volume), g.isPulmao ? '' : num(ra.meta), g.isPulmao ? '' : num(ra.volume - ra.meta)].join(';'));
+                Object.values(ra.emps).forEach(ea => {
+                    const util = res.horasDisp > 0 ? Math.round(ea.hOp / res.horasDisp * 100) : 0;
+                    linhas.push(['Empurrador', esc(g.nome), esc(ra.rota.nome), esc(ea.nome), esc(ea.comboio), ciclo(ea.hOp, ea.viagens), num(ea.viagens, 1), num(ea.hNav), num(ea.hOp), util, volViag(ea.volume, ea.viagens), num(ea.volume), '', ''].join(';'));
+                });
+            });
+        });
+        linhas.push('', ['Empurrador', 'Rotas atendidas', 'Viagens', 'Horas navegadas', 'Horas em operação', 'Horas ociosas', 'Utilização (%)', 'Volume (t)'].join(';'));
+        res.empurradores.forEach(e => {
+            const rotasTxt = Object.keys(e.rotas).map(id => rotas.find(r => r.id === parseFloat(id))?.nome || '?').join(', ');
+            const util = res.horasDisp > 0 ? Math.round(e.hOp / res.horasDisp * 100) : 0;
+            linhas.push([esc(e.emp?.nome), esc(rotasTxt), num(e.viagens, 1), num(e.hNav), num(e.hOp), num(Math.max(0, res.horasDisp - e.hOp)), util, num(e.volume)].join(';'));
+        });
+
+        const csv  = '﻿' + linhas.join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url  = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `distribuicao-frota-${String(cenNome).replace(/\s+/g, '-').toLowerCase()}-${res.ano}.csv`;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
     function setDashView(mode) {
         dashViewMode = mode;
         const btnRota = document.getElementById('btnViewRota');
@@ -6831,6 +7343,7 @@
             document.getElementById('resumoPessimista').textContent = '-';
             document.getElementById('resumoMeta').textContent = '-';
             renderPulmaoDashboard([], mesesDashboard, {});
+            renderDistribuicaoFrota(null);
             renderAlertas([]);
             renderChartDashboard({labels:[],metas:[],otimista:[],medio:[],pessimista:[]});
             renderChartComparativoCenarios(ano, mesesDashboard);
@@ -7051,6 +7564,12 @@
         renderChartCenariosCustomToggle(dashViewMode === 'mes' ? cenariosCustomLista : []);
 
         renderPulmaoDashboard(rotasDoCenario, mesesDashboard, capsAjust, ano);
+        renderDistribuicaoFrota({
+            rotasDoCenario,
+            // Com filtro de rota: só a rota escolhida; sem filtro: todas as rotas do cenário (incl. pulmão)
+            rotasDist: filtroRotaId ? rotasExibidas : rotasDoCenario,
+            mesesDashboard, ano, capsAjust
+        });
         renderAlertas(alertas, conflitosLista);
         renderChartDashboard(chartData);
         renderChartComparativoCenarios(ano, mesesDashboard);
